@@ -7,8 +7,7 @@ const STATIC = [
   assetUrl('./'),
   assetUrl('./index.html'),
   assetUrl('./manifest.json'),
-  assetUrl('./icon-192.png'),
-  assetUrl('./icon-512.png')
+  assetUrl('./icon.svg')
 ];
 
 self.addEventListener('install', e => {
