@@ -1,0 +1,1626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Maint Tool" />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <title>Maint Tool</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+    body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #F2F4F7; }
+    #root { height: 100dvh; overflow: hidden; }
+    input, textarea, select { font-size: 16px !important; }
+    input.days-input { font-size: 13px !important; }
+    input.tz-search-input { font-size: 11px !important; }
+    @keyframes tabSlideFromRight {
+      from { opacity: 0; transform: translateX(28px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes tabSlideFromLeft {
+      from { opacity: 0; transform: translateX(-28px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .tab-panel { animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+  <script type="text/babel" data-presets="env,react">
+const { useState, useEffect, useReducer, useRef } = React;
+
+const pad = (n) => String(n).padStart(2, "0");
+const DOW_EN = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const MON3   = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+const TZ_STORAGE_KEY = "maintTimerSelectedTz";
+const CALC_HISTORY_STORAGE_KEY = "maintToolCalcHistory";
+const FLT_LOG_MEMO_STORAGE_KEY = "maintToolFltLogMemo";
+const APP_VERSION = "1.0.0";
+
+// ─── Timezone list ────────────────────────────────────────────────────────────
+const TZ_LIST = [
+  { flag:"🇰🇷", label:"KST", name:"Korea",        zone:"Asia/Seoul" },
+  { flag:"🇯🇵", label:"JST", name:"Japan",        zone:"Asia/Tokyo" },
+  { flag:"🇨🇳", label:"CST", name:"China",        zone:"Asia/Shanghai" },
+  { flag:"🇦🇺", label:"AEST",name:"Australia(BNE)",zone:"Australia/Brisbane" },
+  { flag:"🇦🇺", label:"AET", name:"Australia(E)", zone:"Australia/Sydney" },
+  { flag:"🇦🇹", label:"CET", name:"Austria",      zone:"Europe/Vienna" },
+  { flag:"🇧🇩", label:"BST", name:"Bangladesh",   zone:"Asia/Dhaka" },
+  { flag:"🇧🇪", label:"CET", name:"Belgium",      zone:"Europe/Brussels" },
+  { flag:"🇧🇷", label:"BRT", name:"Brazil",       zone:"America/Sao_Paulo" },
+  { flag:"🇰🇭", label:"ICT", name:"Cambodia",     zone:"Asia/Phnom_Penh" },
+  { flag:"🇨🇦", label:"ET",  name:"Canada(East)", zone:"America/Toronto" },
+  { flag:"🇨🇦", label:"MT",  name:"Canada(Mtn)",  zone:"America/Edmonton" },
+  { flag:"🇨🇦", label:"PT",  name:"Canada(West)", zone:"America/Vancouver" },
+  { flag:"🇨🇱", label:"CLT", name:"Chile",        zone:"America/Santiago" },
+  { flag:"🇨🇴", label:"COT", name:"Colombia",     zone:"America/Bogota" },
+  { flag:"🇨🇿", label:"CET", name:"Czech",        zone:"Europe/Prague" },
+  { flag:"🇪🇬", label:"EET", name:"Egypt",        zone:"Africa/Cairo" },
+  { flag:"🇫🇷", label:"CET", name:"France",       zone:"Europe/Paris" },
+  { flag:"🇩🇪", label:"CET", name:"Germany",      zone:"Europe/Berlin" },
+  { flag:"🇬🇷", label:"EET", name:"Greece",       zone:"Europe/Athens" },
+  { flag:"🇬🇺", label:"ChST",name:"Guam",         zone:"Pacific/Guam" },
+  { flag:"🇭🇰", label:"HKT", name:"Hong Kong",    zone:"Asia/Hong_Kong" },
+  { flag:"🇭🇺", label:"CET", name:"Hungary",      zone:"Europe/Budapest" },
+  { flag:"🇮🇳", label:"IST", name:"India",        zone:"Asia/Kolkata" },
+  { flag:"🇮🇩", label:"WITA",name:"Indonesia(Bali)",zone:"Asia/Makassar" },
+  { flag:"🇮🇩", label:"WIB", name:"Indonesia(JKT)",zone:"Asia/Jakarta" },
+  { flag:"🇮🇹", label:"CET", name:"Italy",        zone:"Europe/Rome" },
+  { flag:"🇰🇿", label:"ALMT",name:"Kazakhstan",   zone:"Asia/Almaty" },
+  { flag:"🇲🇴", label:"MOT", name:"Macau",        zone:"Asia/Macau" },
+  { flag:"🇲🇾", label:"MYT", name:"Malaysia",     zone:"Asia/Kuala_Lumpur" },
+  { flag:"🇲🇽", label:"CST", name:"Mexico",       zone:"America/Mexico_City" },
+  { flag:"🇲🇳", label:"ULAT",name:"Mongolia",     zone:"Asia/Ulaanbaatar" },
+  { flag:"🇲🇲", label:"MMT", name:"Myanmar",      zone:"Asia/Yangon" },
+  { flag:"🇳🇵", label:"NPT", name:"Nepal",        zone:"Asia/Kathmandu" },
+  { flag:"🇳🇱", label:"CET", name:"Netherlands",  zone:"Europe/Amsterdam" },
+  { flag:"🇳🇿", label:"NZT", name:"New Zealand",  zone:"Pacific/Auckland" },
+  { flag:"🇳🇴", label:"CET", name:"Norway",       zone:"Europe/Oslo" },
+  { flag:"🇵🇪", label:"PET", name:"Peru",         zone:"America/Lima" },
+  { flag:"🇵🇭", label:"PHT", name:"Philippines",  zone:"Asia/Manila" },
+  { flag:"🇵🇹", label:"WET", name:"Portugal",     zone:"Europe/Lisbon" },
+  { flag:"🇲🇵", label:"ChST",name:"Saipan",       zone:"Pacific/Saipan" },
+  { flag:"🇸🇬", label:"SGT", name:"Singapore",    zone:"Asia/Singapore" },
+  { flag:"🇪🇸", label:"CET", name:"Spain",        zone:"Europe/Madrid" },
+  { flag:"🇸🇪", label:"CET", name:"Sweden",       zone:"Europe/Stockholm" },
+  { flag:"🇨🇭", label:"CET", name:"Switzerland",  zone:"Europe/Zurich" },
+  { flag:"🇹🇼", label:"TST", name:"Taiwan",       zone:"Asia/Taipei" },
+  { flag:"🇹🇭", label:"ICT", name:"Thailand",     zone:"Asia/Bangkok" },
+  { flag:"🇹🇷", label:"TRT", name:"Turkey",       zone:"Europe/Istanbul" },
+  { flag:"🇦🇪", label:"GST", name:"UAE",          zone:"Asia/Dubai" },
+  { flag:"🇬🇧", label:"GMT", name:"United Kingdom",zone:"Europe/London" },
+  { flag:"🇺🇸", label:"AKT", name:"USA(Alaska)",  zone:"America/Anchorage" },
+  { flag:"🇺🇸", label:"CT",  name:"USA(Central)", zone:"America/Chicago" },
+  { flag:"🇺🇸", label:"ET",  name:"USA(East)",    zone:"America/New_York" },
+  { flag:"🇺🇸", label:"HST", name:"USA(Hawaii)",  zone:"Pacific/Honolulu" },
+  { flag:"🇺🇸", label:"PT",  name:"USA(West)",    zone:"America/Los_Angeles" },
+  { flag:"🇺🇿", label:"UZT", name:"Uzbekistan",   zone:"Asia/Tashkent" },
+  { flag:"🇻🇳", label:"ICT", name:"Vietnam",      zone:"Asia/Ho_Chi_Minh" },
+];
+
+const TZ_AIRPORT_CODES = {
+  "Asia/Seoul": "ICN GMP PUS CJU",
+  "Asia/Tokyo": "NRT HND KIX NGO FUK CTS OKA",
+  "Asia/Shanghai": "PEK PKX PVG SHA CAN SZX XIY TAO CTU TFU HGH NKG DLC SHE WUH CGO TSN",
+  "Australia/Brisbane": "BNE",
+  "Australia/Sydney": "SYD MEL PER ADL CNS",
+  "Europe/Vienna": "VIE",
+  "Asia/Dhaka": "DAC",
+  "Europe/Brussels": "BRU",
+  "America/Sao_Paulo": "GRU",
+  "Asia/Phnom_Penh": "PNH REP SAI",
+  "America/Toronto": "YYZ YUL",
+  "America/Edmonton": "YYC YEG",
+  "America/Vancouver": "YVR",
+  "America/Santiago": "SCL",
+  "America/Bogota": "BOG",
+  "Europe/Prague": "PRG",
+  "Africa/Cairo": "CAI",
+  "Europe/Paris": "CDG ORY",
+  "Europe/Berlin": "FRA MUC BER",
+  "Europe/Athens": "ATH",
+  "Pacific/Guam": "GUM",
+  "Asia/Hong_Kong": "HKG",
+  "Europe/Budapest": "BUD",
+  "Asia/Kolkata": "DEL BOM MAA BLR",
+  "Asia/Makassar": "DPS",
+  "Asia/Jakarta": "CGK",
+  "Europe/Rome": "FCO MXP VCE",
+  "Asia/Almaty": "ALA",
+  "Asia/Macau": "MFM",
+  "Asia/Kuala_Lumpur": "KUL BKI",
+  "America/Mexico_City": "MEX",
+  "Asia/Ulaanbaatar": "UBN",
+  "Asia/Yangon": "RGN",
+  "Asia/Kathmandu": "KTM",
+  "Europe/Amsterdam": "AMS",
+  "Pacific/Auckland": "AKL CHC",
+  "Europe/Oslo": "OSL",
+  "America/Lima": "LIM",
+  "Asia/Manila": "MNL CEB CRK",
+  "Europe/Lisbon": "LIS",
+  "Pacific/Saipan": "SPN",
+  "Asia/Singapore": "SIN",
+  "Europe/Madrid": "MAD BCN",
+  "Europe/Stockholm": "ARN",
+  "Europe/Zurich": "ZRH",
+  "Asia/Taipei": "TPE TSA KHH",
+  "Asia/Bangkok": "BKK DMK HKT CNX",
+  "Europe/Istanbul": "IST SAW",
+  "Asia/Dubai": "DXB AUH",
+  "Europe/London": "LHR LGW STN MAN",
+  "America/Anchorage": "ANC",
+  "America/Chicago": "ORD DFW IAH MSP",
+  "America/New_York": "JFK EWR IAD BOS ATL DTW",
+  "Pacific/Honolulu": "HNL",
+  "America/Los_Angeles": "LAX SFO SEA LAS",
+  "Asia/Tashkent": "TAS",
+  "Asia/Ho_Chi_Minh": "SGN HAN DAD",
+};
+
+const TZ_SEARCH_ALIASES = {
+  "Asia/Seoul": ["Seoul","Incheon","Gimpo","Busan","Jeju","Korea","서울","인천","김포","부산","제주","한국"],
+  "Asia/Tokyo": ["Tokyo","Narita","Haneda","Osaka","Kansai","Nagoya","Fukuoka","Sapporo","Okinawa","Japan","도쿄","나리타","하네다","오사카","간사이","나고야","후쿠오카","삿포로","오키나와","일본"],
+  "Asia/Shanghai": ["Beijing","Shanghai","Guangzhou","Shenzhen","Xian","Qingdao","Chengdu","Hangzhou","Nanjing","Dalian","Shenyang","Wuhan","Zhengzhou","Tianjin","China","베이징","상하이","광저우","선전","시안","칭다오","청두","항저우","난징","다롄","선양","우한","정저우","톈진","중국"],
+  "Australia/Brisbane": ["Brisbane","Australia","브리즈번","호주"],
+  "Australia/Sydney": ["Sydney","Melbourne","Perth","Adelaide","Cairns","Australia","시드니","멜버른","퍼스","애들레이드","케언스","호주"],
+  "Europe/Vienna": ["Vienna","Austria","비엔나","빈","오스트리아"],
+  "Asia/Dhaka": ["Dhaka","Bangladesh","다카","방글라데시"],
+  "Europe/Brussels": ["Brussels","Belgium","브뤼셀","벨기에"],
+  "America/Sao_Paulo": ["Sao Paulo","São Paulo","Brazil","상파울루","브라질"],
+  "Asia/Phnom_Penh": ["Phnom Penh","Siem Reap","Cambodia","프놈펜","씨엠립","시엠레아프","캄보디아"],
+  "America/Toronto": ["Toronto","Montreal","Canada","토론토","몬트리올","캐나다"],
+  "America/Edmonton": ["Calgary","Edmonton","Canada","캘거리","에드먼턴","캐나다"],
+  "America/Vancouver": ["Vancouver","Canada","밴쿠버","캐나다"],
+  "America/Santiago": ["Santiago","Chile","산티아고","칠레"],
+  "America/Bogota": ["Bogota","Bogotá","Colombia","보고타","콜롬비아"],
+  "Europe/Prague": ["Prague","Czech","프라하","체코"],
+  "Africa/Cairo": ["Cairo","Egypt","카이로","이집트"],
+  "Europe/Paris": ["Paris","Charles de Gaulle","Orly","France","파리","샤를 드골","오를리","프랑스"],
+  "Europe/Berlin": ["Frankfurt","Munich","Berlin","Germany","프랑크푸르트","뮌헨","베를린","독일"],
+  "Europe/Athens": ["Athens","Greece","아테네","그리스"],
+  "Pacific/Guam": ["Guam","괌"],
+  "Asia/Hong_Kong": ["Hong Kong","홍콩"],
+  "Europe/Budapest": ["Budapest","Hungary","부다페스트","헝가리"],
+  "Asia/Kolkata": ["Delhi","Mumbai","Chennai","Bengaluru","Bangalore","India","델리","뭄바이","첸나이","벵갈루루","방갈로르","인도"],
+  "Asia/Makassar": ["Bali","Denpasar","Indonesia","발리","덴파사르","인도네시아"],
+  "Asia/Jakarta": ["Jakarta","Indonesia","자카르타","인도네시아"],
+  "Europe/Rome": ["Rome","Milan","Venice","Italy","로마","밀라노","베네치아","이탈리아"],
+  "Asia/Almaty": ["Almaty","Kazakhstan","알마티","카자흐스탄"],
+  "Asia/Macau": ["Macau","Macao","마카오"],
+  "Asia/Kuala_Lumpur": ["Kuala Lumpur","Kota Kinabalu","Malaysia","쿠알라룸푸르","코타키나발루","말레이시아"],
+  "America/Mexico_City": ["Mexico City","Mexico","멕시코시티","멕시코"],
+  "Asia/Ulaanbaatar": ["Ulaanbaatar","Ulan Bator","Mongolia","울란바토르","몽골"],
+  "Asia/Yangon": ["Yangon","Myanmar","양곤","미얀마"],
+  "Asia/Kathmandu": ["Kathmandu","Nepal","카트만두","네팔"],
+  "Europe/Amsterdam": ["Amsterdam","Netherlands","암스테르담","네덜란드"],
+  "Pacific/Auckland": ["Auckland","Christchurch","New Zealand","오클랜드","크라이스트처치","뉴질랜드"],
+  "Europe/Oslo": ["Oslo","Norway","오슬로","노르웨이"],
+  "America/Lima": ["Lima","Peru","리마","페루"],
+  "Asia/Manila": ["Manila","Cebu","Clark","Philippines","마닐라","세부","클라크","필리핀"],
+  "Europe/Lisbon": ["Lisbon","Portugal","리스본","포르투갈"],
+  "Pacific/Saipan": ["Saipan","사이판"],
+  "Asia/Singapore": ["Singapore","싱가포르"],
+  "Europe/Madrid": ["Madrid","Barcelona","Spain","마드리드","바르셀로나","스페인"],
+  "Europe/Stockholm": ["Stockholm","Sweden","스톡홀름","스웨덴"],
+  "Europe/Zurich": ["Zurich","Switzerland","취리히","스위스"],
+  "Asia/Taipei": ["Taipei","Kaohsiung","Taiwan","타이베이","가오슝","대만"],
+  "Asia/Bangkok": ["Bangkok","Don Mueang","Phuket","Chiang Mai","Thailand","방콕","돈므앙","푸켓","치앙마이","태국","HTK"],
+  "Europe/Istanbul": ["Istanbul","Turkey","이스탄불","튀르키예","터키"],
+  "Asia/Dubai": ["Dubai","Abu Dhabi","UAE","두바이","아부다비","아랍에미리트"],
+  "Europe/London": ["London","Heathrow","Gatwick","Stansted","Manchester","United Kingdom","런던","히스로","개트윅","스탠스테드","맨체스터","영국"],
+  "America/Anchorage": ["Anchorage","Alaska","앵커리지","알래스카"],
+  "America/Chicago": ["Chicago","Dallas","Houston","Minneapolis","USA","시카고","댈러스","휴스턴","미니애폴리스","미국"],
+  "America/New_York": ["New York","Newark","Washington","Boston","Atlanta","Detroit","USA","뉴욕","뉴어크","워싱턴","보스턴","애틀랜타","디트로이트","미국"],
+  "Pacific/Honolulu": ["Honolulu","Hawaii","호놀룰루","하와이"],
+  "America/Los_Angeles": ["Los Angeles","San Francisco","Seattle","Las Vegas","USA","로스앤젤레스","샌프란시스코","시애틀","라스베이거스","미국"],
+  "Asia/Tashkent": ["Tashkent","Uzbekistan","타슈켄트","우즈베키스탄"],
+  "Asia/Ho_Chi_Minh": ["Ho Chi Minh","Hanoi","Da Nang","Vietnam","호찌민","하노이","다낭","베트남"],
+};
+
+function matchesTzSearch(t, query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const codes = (TZ_AIRPORT_CODES[t.zone] || "").split(/\s+/).filter(Boolean);
+  const aliases = TZ_SEARCH_ALIASES[t.zone] || [];
+  return (
+    t.name.toLowerCase().startsWith(q) ||
+    t.label.toLowerCase().startsWith(q) ||
+    codes.some(code => code.toLowerCase().startsWith(q)) ||
+    aliases.some(alias => alias.toLowerCase().startsWith(q))
+  );
+}
+
+function todayStr() {
+  const n = new Date();
+  return `${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}T${pad(n.getHours())}:${pad(n.getMinutes())}`;
+}
+
+function findTz(id) {
+  return TZ_LIST.find(t=>t.zone===id || t.label===id) || TZ_LIST[0];
+}
+function getSavedTz() {
+  try {
+    const saved = localStorage.getItem(TZ_STORAGE_KEY);
+    return findTz(saved).zone;
+  } catch {
+    return TZ_LIST[0].zone;
+  }
+}
+function blurActiveInput() {
+  const el = document.activeElement;
+  if (el && typeof el.blur === "function" && ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName)) {
+    el.blur();
+  }
+}
+function getPartsInZone(date, timeZone) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone, hourCycle:"h23", year:"numeric", month:"2-digit", day:"2-digit",
+    hour:"2-digit", minute:"2-digit", second:"2-digit"
+  }).formatToParts(date);
+  return Object.fromEntries(parts.filter(p=>p.type!=="literal").map(p=>[p.type, Number(p.value)]));
+}
+function getOffsetMs(date, timeZone) {
+  const p = getPartsInZone(date, timeZone);
+  return Date.UTC(p.year, p.month-1, p.day, p.hour, p.minute, p.second) - date.getTime();
+}
+function zonedDateToUtc(y, mo, d, h, m, timeZone) {
+  let utc = Date.UTC(y, mo, d, h, m, 0, 0);
+  for (let i=0; i<3; i++) utc = Date.UTC(y, mo, d, h, m, 0, 0) - getOffsetMs(new Date(utc), timeZone);
+  return utc;
+}
+const fmtDateCompact = (day, month, year) => `${pad(day)} ${MON3[month]} ${String(year).slice(2)}`;
+function fmt29MARZone(date, timeZone="UTC") {
+  if (!date||isNaN(date)) return "—";
+  const p = getPartsInZone(date, timeZone);
+  const dow = new Intl.DateTimeFormat("en-US", {timeZone, weekday:"short"}).format(date);
+  return `${fmtDateCompact(p.day, p.month-1, p.year)} (${dow})`;
+}
+function fmtTimeZone(date, timeZone) {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone, hourCycle:"h23", hour:"2-digit", minute:"2-digit", second:"2-digit"
+  }).format(date);
+}
+function fmtUtcOffset(date, timeZone) {
+  const mins = Math.round(getOffsetMs(date, timeZone) / 60000);
+  const sign = mins >= 0 ? "+" : "-";
+  const abs = Math.abs(mins);
+  const h = Math.floor(abs / 60);
+  const m = abs % 60;
+  return `UTC${sign}${h}${m ? `:${pad(m)}` : ""}`;
+}
+function TimeText({ value, active, color }) {
+  const [hh="--", mm="--", ss="--"] = String(value || "--:--:--").split(":");
+  const c = active ? color : "#CCC";
+  const cell = { display:"inline-flex", justifyContent:"center", width:14 };
+  const colon = { display:"inline-flex", justifyContent:"center", width:5 };
+  return (
+    <span style={{ display:"inline-flex", alignItems:"center", width:60, marginLeft:4, color:c, fontSize:12, fontWeight:800, lineHeight:"18px", fontVariantNumeric:"tabular-nums" }}>
+      <span style={cell}>{hh}</span><span style={colon}>:</span><span style={cell}>{mm}</span><span style={colon}>:</span><span style={cell}>{ss}</span>
+    </span>
+  );
+}
+
+// Returns {utc, local} due dates. Custom dates use the chosen timezone's 23:59 cutoff.
+function calcDuePair(type, customDays, useCustom, customDateStr, localZone="Asia/Seoul", customTz="UTC") {
+  const daysMap = {A: parseInt(customDays)||0, B:3, C:10, D:120, MOI:240};
+
+  let utcBaseMs, localBaseMs;
+  if (useCustom && customDateStr) {
+    const parts = customDateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!parts) return {utc:null, local:null};
+    const y=parseInt(parts[1]), mo=parseInt(parts[2])-1, d=parseInt(parts[3]);
+    const baseMs = customTz === "UTC"
+      ? Date.UTC(y, mo, d, 23, 59, 0, 0)
+      : zonedDateToUtc(y, mo, d, 23, 59, localZone);
+    utcBaseMs = baseMs;
+    localBaseMs = baseMs;
+  } else {
+    const now = new Date();
+    const utcY=now.getUTCFullYear(), utcMo=now.getUTCMonth(), utcD=now.getUTCDate();
+    const local = getPartsInZone(now, localZone);
+    utcBaseMs = Date.UTC(utcY, utcMo, utcD, 23, 59, 0, 0);
+    localBaseMs = zonedDateToUtc(local.year, local.month-1, local.day, 23, 59, localZone);
+  }
+
+  function applyType(baseMs) {
+    const d = new Date(baseMs);
+    if (type === "NEF") {
+      d.setUTCFullYear(d.getUTCFullYear() + 2);
+    } else {
+      const days = daysMap[type] ?? 0;
+      d.setUTCDate(d.getUTCDate() + days);
+    }
+    return d;
+  }
+
+  return { utc: applyType(utcBaseMs), local: applyType(localBaseMs) };
+}
+function fmt29MAR(date) {
+  if (!date||isNaN(date)) return "—";
+  return `${fmtDateCompact(date.getUTCDate(), date.getUTCMonth(), date.getUTCFullYear())} (${DOW_EN[date.getUTCDay()]})`;
+}
+function fmtTimeUTC(date) {
+  if (!date||isNaN(date)) return "";
+  return `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
+}
+
+function DueResult({ dueUTC, dueLocal, tzActive, accent, label, selectedTz, customTzMode=null }) {
+  if (!dueUTC && !dueLocal) return null;
+  const tz = findTz(selectedTz);
+  const showUTC = customTzMode ? customTzMode === "UTC" : tzActive.UTC;
+  const showLocal = customTzMode ? customTzMode !== "UTC" : tzActive.KST;
+  return (
+    <div style={{ marginTop:20 }}>
+      <div style={{ fontSize:16, fontWeight:700, color:"#000000", letterSpacing:"0.06em", marginBottom:6 }}>DUE DATE</div>
+      <div style={{ background:"#fff", border:"1.5px solid #E8E8E8", borderLeft:`4px solid ${accent}`, borderRadius:"0 12px 12px 0", padding:"14px 16px", boxShadow:"0 2px 8px rgba(0,0,0,0.06)" }}>
+        {label && <div style={{ fontSize:9, fontWeight:800, color:accent, letterSpacing:"0.12em", marginBottom:8 }}>{label}</div>}
+        {showUTC && dueUTC && (
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:7 }}>
+            <span style={{ ...TZ_BADGE_FIXED, fontSize:11, background:"#F5E8EA", border:"1.5px solid #9B233566", color:"#8A3545", padding:"1px 7px", borderRadius:5, fontWeight:800, flexShrink:0, lineHeight:"18px" }}>🇬🇧 UTC</span>
+            <span style={{ fontSize:20, fontWeight:700, color:"#000000" }}>{fmt29MAR(dueUTC)}</span>
+            </div>
+        )}
+        {showLocal && dueLocal && (
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <span style={{ ...TZ_BADGE_FIXED, fontSize:11, background:"#E4EBF5", border:"1.5px solid #1E40AF66", color:"#2D4E8A", padding:"1px 7px", borderRadius:5, fontWeight:800, flexShrink:0, lineHeight:"18px" }}>{tz.flag} {tz.label}</span>
+            <span style={{ fontSize:20, fontWeight:700, color:"#000000" }}>{fmt29MARZone(dueLocal, tz.zone)}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Header({ tzActive, setTzActive, selectedTz, setSelectedTz, onTitleClick, onMenuClick }) {
+  const [,tick]=useState(0);
+  const [showTzPicker, setShowTzPicker] = useState(false);
+  const [tzSearch, setTzSearch] = useState("");
+  const tzPickerRef = useRef(null);
+  useEffect(()=>{ const iv=setInterval(()=>tick(n=>n+1),1000); return ()=>clearInterval(iv); },[]);
+  useEffect(()=>{
+    if (!showTzPicker) return;
+    const closeOnOutside = (e) => {
+      if (tzPickerRef.current && !tzPickerRef.current.contains(e.target)) {
+        setShowTzPicker(false);
+      }
+    };
+    document.addEventListener("pointerdown", closeOnOutside);
+    return () => document.removeEventListener("pointerdown", closeOnOutside);
+  }, [showTzPicker]);
+  const now=new Date();
+  const fmtU=(d)=>`${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+  const tz = findTz(selectedTz);
+  const normalizedTzSearch = tzSearch.trim().toLowerCase();
+  const visibleTzList = normalizedTzSearch
+    ? TZ_LIST.filter(t => matchesTzSearch(t, normalizedTzSearch))
+    : TZ_LIST;
+
+  return (
+    <div style={{ background:"#fff", borderBottom:"1px solid #EAEAEA", padding:"8px 2px 8px 14px", display:"flex", justifyContent:"space-between", alignItems:"center", position:"sticky", top:0, zIndex:100, boxShadow:"0 1px 6px rgba(0,0,0,0.06)" }}>
+      <div style={{ display:"flex", alignItems:"center", gap:9, minWidth:0 }}>
+        <button onClick={onMenuClick} aria-label="Open menu"
+          style={{ width:30, height:30, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:4, background:"transparent", border:"none", cursor:"pointer", padding:0, flexShrink:0, WebkitTapHighlightColor:"transparent" }}>
+          <span style={{ width:20, height:2, background:"#000000", borderRadius:2 }} />
+          <span style={{ width:20, height:2, background:"#000000", borderRadius:2 }} />
+          <span style={{ width:20, height:2, background:"#000000", borderRadius:2 }} />
+        </button>
+        <button onClick={onTitleClick}
+          style={{ background:"transparent", border:"none", padding:0, fontSize:24, fontWeight:800, color:"#000000", letterSpacing:"0.01em", cursor:"pointer", fontFamily:"inherit", textAlign:"left", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+          Maint Tool
+        </button>
+      </div>
+
+      <div ref={tzPickerRef} style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4, position:"relative", flexShrink:0 }}>
+        {/* UTC row */}
+        <div style={{ display:"flex", alignItems:"center" }}>
+          <div style={{ width:55, display:"flex", justifyContent:"flex-end" }}>
+            <button onClick={()=>setTzActive(prev=>{ const n={...prev,UTC:!prev.UTC}; return (!n.UTC&&!prev.KST)?prev:n; })}
+              style={{ width:55, boxSizing:"border-box", display:"flex", alignItems:"center", justifyContent:"center", background:tzActive.UTC?"#F5E8EA":"#F0F0F0", border:`1.5px solid ${tzActive.UTC?"#9B233566":"#DDD"}`, borderRadius:5, padding:"1px 7px", fontSize:11, fontWeight:800, color:tzActive.UTC?"#8A3545":"#BBB", cursor:"pointer", lineHeight:"18px" }}>
+              <span style={{marginRight:2,fontSize:11}}>🇬🇧</span>UTC
+            </button>
+          </div>
+          <TimeText value={tzActive.UTC?fmtU(now):"--:--:--"} active={tzActive.UTC} color="#8A3545" />
+        </div>
+
+        {/* Local TZ row */}
+        <div style={{ display:"flex", alignItems:"center" }}>
+          <div style={{ width:55, display:"flex", justifyContent:"flex-end", gap:2 }}>
+            <button onClick={()=>{ setTzSearch(""); setShowTzPicker(v=>!v); }}
+              style={{ background:"#F8F8F8", border:"1px solid #E0E0E0", borderRadius:5, padding:"1px 5px", fontSize:9, cursor:"pointer", lineHeight:"18px", color:"#555", display:"flex", alignItems:"center", gap:2 }}>
+              <span style={{fontSize:10}}>{tz.flag}</span>
+              <span style={{fontSize:7, color:"#AAA"}}>▼</span>
+            </button>
+            <button onClick={()=>setTzActive(prev=>{ const n={...prev,KST:!prev.KST}; return (!prev.UTC&&!n.KST)?prev:n; })}
+              style={{ width:55, minWidth:55, flexShrink:0, boxSizing:"border-box", background:tzActive.KST?"#E4EBF5":"#F0F0F0", border:`1.5px solid ${tzActive.KST?"#1E40AF66":"#DDD"}`, borderRadius:5, padding:"1px 7px", fontSize:11, fontWeight:800, color:tzActive.KST?"#2D4E8A":"#BBB", cursor:"pointer", lineHeight:"18px", whiteSpace:"nowrap", display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <span style={{marginRight:2,fontSize:11}}>{tz.flag}</span>{tz.label}
+            </button>
+          </div>
+          <TimeText value={tzActive.KST?fmtTimeZone(now, tz.zone):"--:--:--"} active={tzActive.KST} color="#2D4E8A" />
+        </div>
+
+        {/* Timezone picker dropdown */}
+        {showTzPicker && (
+          <div style={{ position:"absolute", top:"100%", right:0, marginTop:4, background:"#fff", border:"1.5px solid #E8E8E8", borderRadius:10, boxShadow:"0 4px 16px rgba(0,0,0,0.12)", zIndex:200, minWidth:210, maxHeight:300, overflowY:"auto" }}>
+            <div style={{ position:"sticky", top:0, background:"#fff", zIndex:1, padding:"8px", borderBottom:"1px solid #F0F0F0" }}>
+              <input
+                className="tz-search-input"
+                value={tzSearch}
+                onChange={e=>setTzSearch(e.target.value.toUpperCase())}
+                placeholder="Search Country or Airport"
+                style={{ width:"100%", border:"1.5px solid #E5E7EB", borderRadius:7, padding:"8px 10px", color:"#000000", outline:"none", fontFamily:"inherit" }}
+              />
+            </div>
+            {visibleTzList.length === 0 && (
+              <div style={{ padding:"14px 12px", fontSize:12, color:"#9CA3AF", textAlign:"center" }}>No country found</div>
+            )}
+            {visibleTzList.map((t,i)=>(
+              <button key={t.zone} onClick={()=>{ setSelectedTz(t.zone); setShowTzPicker(false); }}
+                style={{ display:"flex", alignItems:"center", gap:8, width:"100%", padding:"8px 12px", background: findTz(selectedTz).zone===t.zone?"#EFF6FF":"transparent", border:"none", borderBottom:"1px solid #F5F5F5", cursor:"pointer", textAlign:"left" }}>
+                <span style={{fontSize:16}}>{t.flag}</span>
+                <span style={{fontSize:12, fontWeight:600, color:"#2D4E8A", minWidth:36}}>{t.label}</span>
+                <span style={{fontSize:11, color:"#9CA3AF"}}>{t.name}</span>
+                <span style={{fontSize:9, lineHeight:1, color:"#CCC", marginLeft:"auto"}}>{fmtUtcOffset(now, t.zone)}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const IS={ width:"100%", boxSizing:"border-box", background:"#F8F9FA", border:"1.5px solid #E8E8E8", borderRadius:9, padding:"11px 14px", color:"#1F2937", fontSize:16, outline:"none", fontFamily:"inherit" };
+const TZ_BADGE_FIXED = { width:55, boxSizing:"border-box", display:"inline-flex", alignItems:"center", justifyContent:"center", whiteSpace:"nowrap" };
+
+const NEUTRAL_ACCENT = { color:"#000000", bg:"#FFFFFF", border:"#000000" };
+const MEL_CATS={
+  A:{...NEUTRAL_ACCENT, days:null,  short:"Specified"},
+  B:{...NEUTRAL_ACCENT, days:3,     short:"3 Days"},
+  C:{...NEUTRAL_ACCENT, days:10,    short:"10 Days"},
+  D:{...NEUTRAL_ACCENT, days:120,   short:"120 Days"},
+};
+const MEL_DESC={ A:"Specified Period", B:"3 Calendar Days", C:"10 Calendar Days", D:"120 Calendar Days" };
+
+
+
+// ─── Year/Month Drum ──────────────────────────────────────────────────────────
+const YM_ITEM_H = 26;
+const YM_VISIBLE = 7;
+const YM_HALF = Math.floor(YM_VISIBLE / 2);
+
+function DrumYM({ values, selected, onSelect, width=90 }) {
+  const ref = useRef(null);
+  const ticking = useRef(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (el) el.scrollTop = selected * YM_ITEM_H;
+  }, [selected]);
+
+  const handleScroll = () => {
+    if (ticking.current) return;
+    ticking.current = true;
+    requestAnimationFrame(() => {
+      const el = ref.current;
+      if (el) {
+        const idx = Math.round(el.scrollTop / YM_ITEM_H);
+        onSelect(Math.max(0, Math.min(values.length - 1, idx)));
+      }
+      ticking.current = false;
+    });
+  };
+
+  return (
+    <div style={{ position:"relative", width, height: YM_ITEM_H * YM_VISIBLE, overflow:"hidden", touchAction:"pan-y" }}>
+      <div style={{ position:"absolute", top: YM_ITEM_H * YM_HALF, left:4, right:4, height: YM_ITEM_H, background:"rgba(44,62,107,0.08)", border:"1px solid #C8D4E8", borderRadius:8, pointerEvents:"none", zIndex:1 }} />
+      <div style={{ position:"absolute", inset:0, background:"linear-gradient(to bottom, rgba(250,250,252,1) 0%, rgba(250,250,252,0.6) 25%, transparent 42%, transparent 58%, rgba(250,250,252,0.6) 75%, rgba(250,250,252,1) 100%)", pointerEvents:"none", zIndex:2 }} />
+      <div ref={ref} onScroll={handleScroll}
+        style={{ height:"100%", overflowY:"scroll", scrollSnapType:"y mandatory", WebkitOverflowScrolling:"auto", overscrollBehavior:"contain", scrollbarWidth:"none", msOverflowStyle:"none", touchAction:"pan-y" }}>
+        <div style={{ height: YM_ITEM_H * YM_HALF }} />
+        {values.map((v, i) => {
+          const dist = Math.abs(i - selected);
+          return (
+            <div key={i}
+              onClick={()=>{ if(ref.current) ref.current.scrollTop=i*YM_ITEM_H; onSelect(i); }}
+              style={{ height: YM_ITEM_H, display:"flex", alignItems:"center", justifyContent:"center", scrollSnapAlign:"center", scrollSnapStop:"always",
+                fontSize: dist===0?20:dist===1?16:13, fontWeight: dist===0?700:400,
+                color: dist===0?"#000000":"#A0AABB", opacity: dist===0?1:dist===1?0.65:0.3,
+                position:"relative", zIndex:3, cursor:"pointer", userSelect:"none" }}>
+              {v}
+            </div>
+          );
+        })}
+        <div style={{ height: YM_ITEM_H * YM_HALF }} />
+      </div>
+    </div>
+  );
+}
+
+
+// ─── Custom Date Picker ───────────────────────────────────────────────────────
+const NAVY = "#2C3E6B";
+const NAVY_LT = "#EEF1F8";
+
+function CustomDatePicker({ value, onChange }) {
+  const currentYear = new Date().getFullYear();
+  const parse = (v) => {
+    if (!v) { const n=new Date(); return {y:n.getFullYear(),mo:n.getMonth(),d:n.getDate()}; }
+    const [datePart] = v.split("T");
+    const [y,mo,d] = datePart.split("-").map(Number);
+    return {y, mo:mo-1, d};
+  };
+  const fmt = ({y,mo,d}) => `${y}-${pad(mo+1)}-${pad(d)}T00:00`;
+  const [cur, setCur] = useState(() => parse(value));
+  const emit = (next) => { setCur(next); onChange(fmt(next)); };
+  const allYears = Array.from({length: 2100 - 2000 + 1}, (_,i) => 2000 + i);
+  const months = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+  const daysInMonth = (y,mo) => new Date(y,mo+1,0).getDate();
+  const allDays = Array.from({length: daysInMonth(cur.y, cur.mo)}, (_,i) => pad(i+1));
+  const yearIdx = allYears.indexOf(cur.y) >= 0 ? allYears.indexOf(cur.y) : 10;
+  return (
+    <div style={{ background:"#fff", border:"1.5px solid #E8E8E8", borderRadius:12, overflow:"hidden" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6, padding:"4px 8px" }}>
+        <DrumYM values={allDays} selected={Math.min(cur.d-1, allDays.length-1)}
+          onSelect={i=>emit({...cur, d:i+1})} width={64} />
+        <span style={{ fontSize:11, fontWeight:600, color:"#9CA3AF" }}>D</span>
+        <DrumYM values={months} selected={cur.mo}
+          onSelect={mo=>emit({...cur, mo, d:Math.min(cur.d, daysInMonth(cur.y, mo))})} width={72} />
+        <span style={{ fontSize:11, fontWeight:600, color:"#9CA3AF" }}>M</span>
+        <DrumYM values={allYears} selected={yearIdx}
+          onSelect={i=>emit({...cur, y:allYears[i], d:Math.min(cur.d, daysInMonth(allYears[i], cur.mo))})} width={84} />
+        <span style={{ fontSize:11, fontWeight:600, color:"#9CA3AF" }}>Y</span>
+      </div>
+    </div>
+  );
+}
+
+function DateInput({useCustom,setUseCustom,customDate,setCustomDate,customTz,setCustomTz,accentBg,accentBdr,accentTxt,tzActive,selectedTz,tzOffset}) {
+  const [inputTz, setInputTz] = useState("UTC");
+  const [showPicker, setShowPicker] = useState(false);
+  const [tempDate, setTempDate] = useState(customDate);
+  const utcTodayFmt = () => {
+    const n=new Date();
+    return `${fmtDateCompact(n.getUTCDate(), n.getUTCMonth(), n.getUTCFullYear())} (${DOW_EN[n.getUTCDay()]})`;
+  };
+  const localTodayFmt = () => fmt29MARZone(new Date(), tzOffset?.zone || "Asia/Seoul");
+  return (
+    <div style={{ marginBottom:22, marginTop:20 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:6 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:"#000000", letterSpacing:"0.10em" }}>START DATE</div>
+        <div style={{ fontSize:14, color:"#9CA3AF", margin:"0 1px" }}>—</div>
+        <div style={{ fontSize:14, fontWeight:700, color:"#000000" }}>{useCustom ? "CUSTOM" : "TODAY"}</div>
+        <button onClick={()=>{
+          blurActiveInput();
+          if(useCustom){ setUseCustom(false); setShowPicker(false); }
+          else { setUseCustom(true); setTempDate(customDate); setShowPicker(true); }
+        }} style={{ background:"#F0F0F0", border:"1px solid #E0E0E0", borderRadius:5, padding:"2px 8px", fontSize:10, color:"#6B7280", cursor:"pointer", fontWeight:600, marginLeft:4 }}>
+          {useCustom ? "TODAY" : "EDIT"}
+        </button>
+      </div>
+      {/* Always show date display box */}
+      <div
+        style={{...IS, background:"#F9F9F9", cursor: useCustom ? "pointer" : "default", fontSize:13, padding:"11px 14px"}}
+        onClick={()=>{ if(useCustom && !showPicker){ blurActiveInput(); setTempDate(customDate); setShowPicker(true); } }}
+      >
+        {!useCustom ? (
+          <>
+            {tzActive.UTC && <div style={{ display:"flex", gap:6, alignItems:"center", marginBottom:3 }}><span style={{ ...TZ_BADGE_FIXED, fontSize:11, background:"#F5E8EA", border:"1.5px solid #9B233566", color:"#8A3545", padding:"1px 7px", borderRadius:5, fontWeight:800, lineHeight:"18px" }}>🇬🇧 UTC</span><span style={{ color:"#6B7280", fontSize:14 }}>{utcTodayFmt()}</span></div>}
+            {tzActive.KST && <div style={{ display:"flex", gap:6, alignItems:"center" }}><span style={{ ...TZ_BADGE_FIXED, fontSize:11, background:"#E4EBF5", border:"1.5px solid #1E40AF66", color:"#2D4E8A", padding:"1px 7px", borderRadius:5, fontWeight:800, lineHeight:"18px" }}>{tzOffset?.flag || "🇰🇷"} {tzOffset?.label || "KST"}</span><span style={{ color:"#6B7280", fontSize:14 }}>{localTodayFmt()}</span></div>}
+          </>
+        ) : (
+          <div style={{ color:"#000000", fontWeight:600, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <span style={{ ...TZ_BADGE_FIXED, fontSize:11, background:customTz==="UTC"?"#F5E8EA":"#E4EBF5", border:`1.5px solid ${customTz==="UTC"?"#9B233566":"#1E40AF66"}`, color:customTz==="UTC"?"#8A3545":"#2D4E8A", padding:"1px 7px", borderRadius:5, fontWeight:800, flexShrink:0, lineHeight:"18px" }}>{customTz==="UTC" ? "🇬🇧" : (tzOffset?.flag || "🇰🇷")} {customTz}</span>
+              {customDate ? (()=>{
+                const dt = customDate.split("T")[0];
+                const [y,mo,d] = dt.split("-");
+                const mon = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"][parseInt(mo)-1];
+                return `${d} ${mon} ${y.slice(2)}`;
+              })() : "Select date..."}
+            </div>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{flexShrink:0}}>
+              {showPicker
+                ? <polyline points="2,10 7,4 12,10" stroke="#AAAAAA" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                : <polyline points="2,4 7,10 12,4" stroke="#AAAAAA" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+              }
+            </svg>
+          </div>
+        )}
+      </div>
+
+      {/* Picker — shown only when editing */}
+      {useCustom && showPicker && (
+        <div style={{ marginTop:6 }}>
+          {/* TZ selector */}
+          <div style={{ display:"flex", gap:6, marginBottom:6 }}>
+            {["UTC", tzOffset?.label || "KST"].map(tz => (
+              <button key={tz} onClick={()=>setInputTz(tz)}
+                style={{ flex:1, padding:"11px 8px", background:inputTz===tz?(tz==="UTC"?"#F5E8EA":"#E4EBF5"):"#F0F0F0", border:`1.5px solid ${inputTz===tz?(tz==="UTC"?"#8A3545":"#2D4E8A"):"#E0E0E0"}`, borderRadius:7, fontSize:13, fontWeight:700, color:inputTz===tz?(tz==="UTC"?"#8A3545":"#2D4E8A"):"#9CA3AF", cursor:"pointer" }}>
+                {tz==="UTC" ? "🇬🇧 UTC" : `${tzOffset?.flag||"🇰🇷"} ${tz}`}
+              </button>
+            ))}
+          </div>
+          <CustomDatePicker value={tempDate} onChange={setTempDate} />
+          <button onClick={()=>{ setCustomDate(tempDate); setCustomTz(inputTz); setShowPicker(false); }}
+            style={{ width:"100%", marginTop:8, padding:"10px", background:"#F3F4F6", border:"1.5px solid #000000", borderRadius:9, fontSize:13, fontWeight:700, color:"#000000", cursor:"pointer" }}>
+            ✓  SET
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MelTab({tzActive, selectedTz, tzOffset}) {
+  const [cat,setCat]=useState("C");
+  const [customDays,setCustomDays]=useState("");
+  const [useCustom,setUseCustom]=useState(false);
+  const [customDate,setCustomDate]=useState(todayStr);
+  const [customTz,setCustomTz]=useState("UTC");
+  const pair=(cat==="A"&&!customDays)?{utc:null,local:null}:calcDuePair(cat,customDays,useCustom,customDate,tzOffset.zone,customTz);
+  const r=MEL_CATS[cat];
+  return (
+    <div>
+      {/* MEL header banner */}
+      <div style={{ background:r.bg, border:`1.5px solid ${r.border}`, borderRadius:12, padding:"18px 16px", marginBottom:20, display:"flex", justifyContent:"space-between", alignItems:"center", boxShadow:"0 2px 5px rgba(0,0,0,0.16), inset 0 0 0 1px rgba(0,0,0,0.04)" }}>
+        <span style={{ fontSize:20, fontWeight:800, color:r.color, letterSpacing:"0.04em" }}>MEL</span>
+        <span style={{ fontSize:12, color:"#000000", fontWeight:500 }}>{MEL_DESC[cat]}</span>
+      </div>
+      <div style={{ marginBottom:20 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:"#000000", letterSpacing:"0.10em", marginBottom:8 }}>CATEGORY</div>
+        <div style={{ display:"flex", gap:8 }}>
+          {Object.entries(MEL_CATS).map(([c,rc])=>(
+            <button key={c} onClick={()=>setCat(c)} style={{ flex:1, padding:"12px 4px", background:cat===c?rc.bg:"#F8F9FA", border:`1.5px solid ${cat===c?rc.border:"#E8E8E8"}`, borderRadius:10, cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:4, transition:"all 0.15s", boxShadow:cat===c?"0 2px 5px rgba(0,0,0,0.16), inset 0 0 0 1px rgba(0,0,0,0.04)":"none" }}>
+              <span style={{ fontSize:28, fontWeight:800, color:cat===c?rc.color:"#D0D0D0" }}>{c}</span>
+              <span style={{ fontSize:9, fontWeight:600, color:cat===c?rc.color:"#CCCCCC", letterSpacing:"0.03em" }}>{rc.short}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <DateInput useCustom={useCustom} setUseCustom={setUseCustom} customDate={customDate} setCustomDate={setCustomDate} customTz={customTz} setCustomTz={setCustomTz} accentBg={r.bg} accentBdr={r.border} accentTxt={r.color} tzActive={tzActive} selectedTz={selectedTz} tzOffset={tzOffset} />
+      {cat==="A"&&(
+        <div style={{ marginBottom:12 }}>
+          <div style={{ fontSize:14, fontWeight:700, color:"#000000", letterSpacing:"0.10em", marginBottom:6 }}>+DAYS</div>
+          <input className="days-input" type="number" min="1" inputMode="numeric" pattern="[0-9]*" style={{...IS, fontSize:13}} placeholder="Enter MEL specified days" value={customDays} onChange={e=>setCustomDays(e.target.value)} />
+        </div>
+      )}
+      <DueResult dueUTC={pair.utc} dueLocal={pair.local} tzActive={tzActive} accent={r.color} selectedTz={selectedTz} customTzMode={useCustom ? customTz : null} />
+    </div>
+  );
+}
+
+function EtcTab({tzActive, selectedTz, tzOffset}) {
+  const [customDays,setCustomDays]=useState("");
+  const [useCustom,setUseCustom]=useState(false);
+  const [customDate,setCustomDate]=useState(todayStr);
+  const [customTz,setCustomTz]=useState("UTC");
+  const accent = NEUTRAL_ACCENT;
+  const pair = customDays ? calcDuePair("A", customDays, useCustom, customDate, tzOffset.zone, customTz) : {utc:null,local:null};
+
+  return (
+    <div>
+      <div style={{ background:accent.bg, border:`1.5px solid ${accent.border}`, borderRadius:12, padding:"18px 16px", marginBottom:20, display:"flex", justifyContent:"space-between", alignItems:"center", boxShadow:"0 2px 5px rgba(0,0,0,0.16), inset 0 0 0 1px rgba(0,0,0,0.04)" }}>
+        <span style={{ fontSize:20, fontWeight:800, color:accent.color, letterSpacing:"0.04em" }}>ETC</span>
+        <span style={{ fontSize:12, color:"#000000", fontWeight:500 }}>Add Calendar Days</span>
+      </div>
+
+      <DateInput useCustom={useCustom} setUseCustom={setUseCustom} customDate={customDate} setCustomDate={setCustomDate} customTz={customTz} setCustomTz={setCustomTz} accentBg={accent.bg} accentBdr={accent.border} accentTxt={accent.color} tzActive={tzActive} selectedTz={selectedTz} tzOffset={tzOffset} />
+      <div style={{ marginBottom:12 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:"#000000", letterSpacing:"0.10em", marginBottom:6 }}>+DAYS</div>
+        <input className="days-input" type="number" min="0" inputMode="numeric" pattern="[0-9]*" style={{...IS, fontSize:13}} placeholder="Enter days to add" value={customDays} onChange={e=>setCustomDays(e.target.value)} />
+      </div>
+      <DueResult dueUTC={pair.utc} dueLocal={pair.local} tzActive={tzActive} accent={accent.color} selectedTz={selectedTz} label={customDays ? `+${customDays} DAYS` : ""} customTzMode={useCustom ? customTz : null} />
+    </div>
+  );
+}
+
+function MoiNefTab({tzActive, selectedTz, tzOffset}) {
+  const [useCustom,setUseCustom]=useState(false);
+  const [customDate,setCustomDate]=useState(todayStr);
+  const [moiInputTz, setMoiInputTz]=useState("UTC");
+  const [moiCustomTz, setMoiCustomTz]=useState("UTC");
+  const [moiShowPicker, setMoiShowPicker]=useState(false);
+  const [moiTempDate, setMoiTempDate]=useState(todayStr);
+
+  // MOI and NEF are both 240 Calendar Days
+  const pair = calcDuePair("MOI", null, useCustom, customDate, tzOffset.zone, moiCustomTz);
+
+  const utcTodayFmt = () => {
+    const n=new Date();
+    return `${fmtDateCompact(n.getUTCDate(), n.getUTCMonth(), n.getUTCFullYear())} (${DOW_EN[n.getUTCDay()]})`;
+  };
+  const localTodayFmt = () => fmt29MARZone(new Date(), tzOffset?.zone || "Asia/Seoul");
+
+  return (
+    <div>
+      {/* Header banner */}
+      <div style={{ background:NEUTRAL_ACCENT.bg, border:`1.5px solid ${NEUTRAL_ACCENT.border}`, borderRadius:12, padding:"18px 16px", marginBottom:20, display:"flex", justifyContent:"space-between", alignItems:"center", boxShadow:"0 2px 5px rgba(0,0,0,0.16), inset 0 0 0 1px rgba(0,0,0,0.04)" }}>
+        <span style={{ fontSize:20, fontWeight:800, color:NEUTRAL_ACCENT.color, letterSpacing:"0.04em" }}>NEF·MOI</span>
+        <span style={{ fontSize:12, color:"#000000", fontWeight:500 }}>240 Calendar Days</span>
+      </div>
+
+      {/* Date input */}
+      <div style={{ marginBottom:16 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:6 }}>
+          <div style={{ fontSize:14, fontWeight:700, color:"#000000", letterSpacing:"0.10em" }}>START DATE</div>
+          <div style={{ fontSize:14, color:"#9CA3AF", margin:"0 1px" }}>—</div>
+          <div style={{ fontSize:14, fontWeight:700, color:"#000000" }}>{useCustom ? "CUSTOM" : "TODAY"}</div>
+          <button onClick={()=>{
+            blurActiveInput();
+            if(useCustom){ setUseCustom(false); setMoiShowPicker(false); }
+            else { setUseCustom(true); setMoiTempDate(customDate); setMoiShowPicker(true); }
+          }} style={{ background:"#F0F0F0", border:"1px solid #E0E0E0", borderRadius:5, padding:"2px 8px", fontSize:10, color:"#6B7280", cursor:"pointer", fontWeight:600, marginLeft:4 }}>
+            {useCustom ? "TODAY" : "EDIT"}
+          </button>
+        </div>
+
+        <div
+          style={{...IS, background:"#F9F9F9", cursor: useCustom ? "pointer" : "default", fontSize:13, padding:"11px 14px"}}
+          onClick={()=>{ if(useCustom && !moiShowPicker){ blurActiveInput(); setMoiTempDate(customDate); setMoiShowPicker(true); } }}
+        >
+          {!useCustom ? (
+            <>
+              {tzActive.UTC && <div style={{ display:"flex", gap:6, alignItems:"center", marginBottom:3 }}><span style={{ ...TZ_BADGE_FIXED, fontSize:11, background:"#F5E8EA", border:"1.5px solid #9B233566", color:"#8A3545", padding:"1px 7px", borderRadius:5, fontWeight:800, lineHeight:"18px" }}>🇬🇧 UTC</span><span style={{ color:"#6B7280", fontSize:14 }}>{utcTodayFmt()}</span></div>}
+              {tzActive.KST && <div style={{ display:"flex", gap:6, alignItems:"center" }}><span style={{ ...TZ_BADGE_FIXED, fontSize:11, background:"#E4EBF5", border:"1.5px solid #1E40AF66", color:"#2D4E8A", padding:"1px 7px", borderRadius:5, fontWeight:800, lineHeight:"18px" }}>{tzOffset?.flag || "🇰🇷"} {tzOffset?.label || "KST"}</span><span style={{ color:"#6B7280", fontSize:14 }}>{localTodayFmt()}</span></div>}
+            </>
+          ) : (
+            <div style={{ color:"#000000", fontWeight:600, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                <span style={{ ...TZ_BADGE_FIXED, fontSize:11, background:moiCustomTz==="UTC"?"#F5E8EA":"#E4EBF5", border:`1.5px solid ${moiCustomTz==="UTC"?"#9B233566":"#1E40AF66"}`, color:moiCustomTz==="UTC"?"#8A3545":"#2D4E8A", padding:"1px 7px", borderRadius:5, fontWeight:800, flexShrink:0, lineHeight:"18px" }}>{moiCustomTz==="UTC" ? "🇬🇧" : (tzOffset?.flag || "🇰🇷")} {moiCustomTz}</span>
+                {customDate ? (()=>{
+                  const dt = customDate.split("T")[0];
+                  const [y,mo,d] = dt.split("-");
+                  const mon = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"][parseInt(mo)-1];
+                  return `${d} ${mon} ${y.slice(2)}`;
+                })() : "Select date..."}
+              </div>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{flexShrink:0}}>
+                {moiShowPicker
+                  ? <polyline points="2,10 7,4 12,10" stroke="#AAAAAA" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                  : <polyline points="2,4 7,10 12,4" stroke="#AAAAAA" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                }
+              </svg>
+            </div>
+          )}
+        </div>
+
+        {useCustom && moiShowPicker && (
+          <div style={{ marginTop:6 }}>
+            <div style={{ display:"flex", gap:6, marginBottom:6 }}>
+              {["UTC", tzOffset?.label || "KST"].map(tz => (
+                <button key={tz} onClick={()=>setMoiInputTz(tz)}
+                  style={{ flex:1, padding:"11px 8px", background:moiInputTz===tz?(tz==="UTC"?"#F5E8EA":"#E4EBF5"):"#F0F0F0", border:`1.5px solid ${moiInputTz===tz?(tz==="UTC"?"#8A3545":"#2D4E8A"):"#E0E0E0"}`, borderRadius:7, fontSize:13, fontWeight:700, color:moiInputTz===tz?(tz==="UTC"?"#8A3545":"#2D4E8A"):"#9CA3AF", cursor:"pointer" }}>
+                  {tz==="UTC" ? "🇬🇧 UTC" : `${tzOffset?.flag||"🇰🇷"} ${tz}`}
+                </button>
+              ))}
+            </div>
+            <CustomDatePicker value={moiTempDate} onChange={setMoiTempDate} />
+
+            <button onClick={()=>{ setCustomDate(moiTempDate); setMoiCustomTz(moiInputTz); setMoiShowPicker(false); }}
+              style={{ width:"100%", marginTop:8, padding:"10px", background:"#F3F4F6", border:"1.5px solid #000000", borderRadius:9, fontSize:13, fontWeight:700, color:"#000000", cursor:"pointer" }}>
+              ✓  SET
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Single unified DUE DATE result */}
+      <DueResult dueUTC={pair.utc} dueLocal={pair.local} tzActive={tzActive} accent={NEUTRAL_ACCENT.color} selectedTz={selectedTz} customTzMode={useCustom ? moiCustomTz : null} />
+    </div>
+  );
+}
+
+// ─── A/C Time Calculator ──────────────────────────────────────────────────────
+function tMins({h,m}){ return h*60+m; }
+function toHM(tm){ const neg=tm<0,abs=Math.abs(Math.round(tm)); return {h:Math.floor(abs/60),m:abs%60,neg}; }
+
+const GRN = "#4A7C5E";
+const EXPR_UNIT_GRN = "#89A99A";
+function fmtNum(value) {
+  return parseFloat(Number(value).toFixed(10)).toLocaleString(undefined,{maximumFractionDigits:10});
+}
+function toSup(n) {
+  const map = {"0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹","-":"⁻"};
+  return String(n).split("").map(ch=>map[ch] ?? ch).join("");
+}
+function fmtHMStr({h,m,neg}){ return `${neg?"-":""}${h.toLocaleString()}hour ${pad(m)}min`; }
+function fmtLengthStr({value,unit,dim=1,neg}) {
+  return `${neg?"-":""}${fmtNum(Math.abs(value))}${unit}${dim>1?toSup(dim):""}`;
+}
+function fmtResultStr(result) {
+  if (!result) return "";
+  if (result.type==="scalar") return result.v.toLocaleString(undefined,{maximumFractionDigits:10});
+  if (result.type==="length") return fmtLengthStr(result);
+  return fmtHMStr(result);
+}
+function fmtHM({h,m,neg}) {
+  return (
+    <span>
+      {neg && <span style={{color:"#DC2626"}}>-</span>}
+      <span style={{fontWeight:400}}>{h.toLocaleString()}</span>
+      <span style={{color:GRN,fontSize:"0.6em",fontWeight:700,marginLeft:1}}>hour</span>
+      <span style={{marginLeft:8,fontWeight:400}}>{pad(m)}</span>
+      <span style={{color:GRN,fontSize:"0.6em",fontWeight:700,marginLeft:1}}>min</span>
+    </span>
+  );
+}
+function fmtHMShort({h,m}){ return `${h.toLocaleString()}hour ${pad(m)}min`; }
+
+function fmtLength(value, unit) {
+  const v = parseFloat(value.toFixed(4)).toLocaleString();
+  return `${v} ${unit}`;
+}
+function fmtUnitValue(value, unit) {
+  const v = parseFloat(value.toFixed(4)).toLocaleString();
+  return `${v} ${unit}`;
+}
+function lengthValueFromBase(baseInch, unit) {
+  if (unit === "inch") return baseInch;
+  if (unit === "ft") return baseInch / 12;
+  if (unit === "cm") return baseInch * 2.54;
+  return baseInch;
+}
+function lengthFactorToInch(unit) {
+  if (unit === "ft") return 12;
+  if (unit === "cm") return 1 / 2.54;
+  return 1;
+}
+function lengthValueFromBaseDim(base, unit, dim=1) {
+  return base / Math.pow(lengthFactorToInch(unit), dim);
+}
+function makeLengthToken(value, unit) {
+  return { type:"length", value, unit, dim:1, base: value * lengthFactorToInch(unit), display:`${value}${unit}` };
+}
+function timeValueFromBase(baseMin, unit) {
+  return unit === "hour" ? baseMin / 60 : baseMin;
+}
+const LENGTH_CONVERSION_UNITS = ["inch", "ft", "cm"];
+function orderedLengthConversionUnits(sourceUnit) {
+  if (!LENGTH_CONVERSION_UNITS.includes(sourceUnit)) return LENGTH_CONVERSION_UNITS;
+  return LENGTH_CONVERSION_UNITS.filter(unit => unit !== sourceUnit).concat(sourceUnit);
+}
+function makeLengthConversion(value, unit) {
+  const baseInch = unit === "ft" ? value * 12 : value;
+  const order = orderedLengthConversionUnits(unit);
+  return { kind:"length", baseInch, unit:order[0], sourceUnit:unit };
+}
+function makeTimeConversion(baseMin, sourceUnit) {
+  return { kind:"time", baseMin, unit:sourceUnit === "min" ? "hour" : "min" };
+}
+function advanceConversion(result) {
+  if (!result) return null;
+  if (result.kind === "length") {
+    const order = orderedLengthConversionUnits(result.sourceUnit);
+    const idx = order.indexOf(result.unit);
+    return {...result, unit: order[(idx + 1) % order.length], sourceUnit:result.sourceUnit || result.unit};
+  }
+  if (result.kind === "time") {
+    return {...result, unit: result.unit === "hour" ? "min" : "hour"};
+  }
+  return result;
+}
+function formatConvertResult(result) {
+  if (!result) return "";
+  if (result.kind === "length") {
+    const order = orderedLengthConversionUnits(result.sourceUnit || result.unit);
+    return order.map(unit => fmtUnitValue(lengthValueFromBase(result.baseInch, unit), unit)).join(" < ");
+  }
+  if (result.kind === "time") return fmtUnitValue(timeValueFromBase(result.baseMin, result.unit), result.unit);
+  return fmtUnitValue(result.value, result.unit);
+}
+function conversionHistoryFor(state) {
+  if (state.unitType==="inch" && state.unitValue!==null) {
+    const next = makeLengthConversion(state.unitValue, "inch");
+    return { expr:fmtLength(state.unitValue, "inch"), result:formatConvertResult(next), kind:"convert" };
+  }
+  if (state.unitType==="ft" && state.unitValue!==null) {
+    const next = makeLengthConversion(state.unitValue, "ft");
+    return { expr:fmtLength(state.unitValue, "ft"), result:formatConvertResult(next), kind:"convert" };
+  }
+  if (state.hPart!==null) {
+    const baseMin = (parseInt(state.hPart)||0) * 60 + (parseInt(state.buffer)||0);
+    const sourceUnit = state.hPart === 0 ? "min" : "hour";
+    const next = makeTimeConversion(baseMin, sourceUnit);
+    const from = sourceUnit === "min"
+      ? `${parseInt(state.buffer)||0} min`
+      : `${parseInt(state.hPart)||0} hour${state.buffer ? ` ${parseInt(state.buffer)||0} min` : ""}`;
+    return { expr:from, result:formatConvertResult(next), kind:"convert" };
+  }
+  if (state.convertResult) {
+    const next = advanceConversion(state.convertResult);
+    return { expr:formatConvertResult(state.convertResult), result:formatConvertResult(next), kind:"convert" };
+  }
+  return null;
+}
+function convertResultToToken(result) {
+  if (!result) return null;
+  if (result.kind === "length") {
+    const value = parseFloat(lengthValueFromBase(result.baseInch, result.unit).toFixed(10));
+    return makeLengthToken(value, result.unit);
+  }
+  if (result.kind === "time") {
+    const mins = Math.round(result.baseMin);
+    return { type:"time", h:Math.floor(mins/60), m:mins%60 };
+  }
+  return null;
+}
+
+const initCalc = () => ({
+  tokens:[], buffer:"", hPart:null,
+  unitType:null, unitValue:null,
+  pendingOp:null, result:null, isResult:false, convertResult:null, minExplicit:false,
+});
+
+function finalizeEntry(buffer, hPart, pendingOp) {
+  if (hPart !== null) return { type:"time", h:hPart, m:parseInt(buffer)||0 };
+  if (buffer !== "") {
+    const n = parseFloat(buffer);
+    const isPercent = buffer.endsWith("%");
+    // Treat plain numbers as scalar values unless hour is explicitly selected.
+    return { type:"scalar", v:isNaN(n)?0:(isPercent?n/100:n), display:buffer };
+  }
+  return null;
+}
+function finalizeStateEntry(state) {
+  if (state.unitType !== null && state.unitValue !== null) {
+    return makeLengthToken(state.unitValue, state.unitType);
+  }
+  return finalizeEntry(state.buffer, state.hPart, state.pendingOp);
+}
+function computeTokens(tokens) {
+  if (!tokens.length) return null;
+  const hasLength = tokens.some(t => t.type === "length");
+  if (hasLength) {
+    let res = tokens[0];
+    if (!res) return null;
+    for (let i=1; i<tokens.length-1; i+=2) {
+      const op=tokens[i], right=tokens[i+1]; if(!op||!right) break;
+      if (res.type==="length" && right.type==="length") {
+        if (op.v==="+" || op.v==="-") {
+          if (res.dim !== right.dim) return null;
+          res = {...res, base: op.v==="+" ? res.base + right.base : res.base - right.base};
+        } else if (op.v==="×") {
+          res = { type:"length", unit:res.unit, dim:res.dim + right.dim, base:res.base * right.base };
+        } else if (op.v==="÷" && right.base!==0) {
+          if (res.dim === right.dim) res = { type:"scalar", v: parseFloat((res.base / right.base).toFixed(10)) };
+          else res = { type:"length", unit:res.unit, dim:res.dim - right.dim, base:res.base / right.base };
+        }
+      } else if (res.type==="length" && right.type==="scalar") {
+        if (op.v==="×") res = {...res, base:res.base * right.v};
+        else if (op.v==="÷" && right.v!==0) res = {...res, base:res.base / right.v};
+      } else if (res.type==="scalar" && right.type==="length") {
+        if (op.v==="×") res = {...right, base:right.base * res.v};
+      } else if (res.type==="scalar" && right.type==="scalar") {
+        if(op.v==="+") res={type:"scalar",v:res.v+right.v}; else if(op.v==="-") res={type:"scalar",v:res.v-right.v};
+        else if(op.v==="×") res={type:"scalar",v:res.v*right.v}; else if(op.v==="÷"&&right.v!==0) res={type:"scalar",v:res.v/right.v};
+      }
+    }
+    if (res.type==="length") {
+      const neg = res.base < 0;
+      const value = lengthValueFromBaseDim(Math.abs(res.base), res.unit, res.dim);
+      return {...res, value:parseFloat(value.toFixed(10)), neg};
+    }
+    return res.type==="scalar" ? { type:"scalar", v:parseFloat(res.v.toFixed(10)) } : res;
+  }
+  const hasTime = tokens.some(t => t.type === "time");
+  if (!hasTime) {
+    // Plain numeric calculation.
+    let res = tokens[0]?.v ?? 0;
+    for (let i=1; i<tokens.length-1; i+=2) {
+      const op=tokens[i], right=tokens[i+1]; if(!op||!right) break;
+      const rv = right.v ?? 0;
+      if(op.v==="+") res+=rv; else if(op.v==="-") res-=rv;
+      else if(op.v==="×") res*=rv; else if(op.v==="÷"&&rv!==0) res/=rv;
+    }
+    return { type:"scalar", v: parseFloat(res.toFixed(10)) };
+  }
+  // Time calculation when any time token is present.
+  const first=tokens[0];
+  let res=first.type==="time"?tMins(first):(first.v||0)*60;
+  for (let i=1;i<tokens.length-1;i+=2) {
+    const op=tokens[i],right=tokens[i+1]; if(!op||!right) break;
+    const rv=right.type==="time"?tMins(right):(op.v==="×"||op.v==="÷")?right.v:(right.v||0)*60;
+    if(op.v==="+") res+=rv; else if(op.v==="-") res-=rv;
+    else if(op.v==="×") res*=rv; else if(op.v==="÷"&&rv!==0) res/=rv;
+  }
+  return { type:"time", ...toHM(res) };
+}
+function renderTok(tok) {
+  if (tok.type==="time")   return fmtHMShort(tok);
+  if (tok.type==="length") return tok.display ?? fmtLengthStr(tok);
+  if (tok.type==="scalar") return tok.display ?? String(tok.v);
+  if (tok.type==="op")     return ` ${tok.v} `;
+  return "";
+}
+function renderExpressionText(text, unitStyle={}, textStyle={}) {
+  return text.split(/(hour|min|inch|ft|cm|%|[⁰¹²³⁴⁵⁶⁷⁸⁹⁻]+)/).map((part,i)=>
+    part==="hour"||part==="min"||part==="inch"||part==="ft"||part==="cm"||part==="%"||/^[⁰¹²³⁴⁵⁶⁷⁸⁹⁻]+$/.test(part)
+      ? <span key={i} style={{ color:EXPR_UNIT_GRN, fontWeight:400, ...unitStyle }}>{part}</span>
+      : <span key={i} style={{ fontWeight:400, ...textStyle }}>{part}</span>
+  );
+}
+function historyDateLabel(ts) {
+  const d = new Date(ts);
+  const now = new Date();
+  const sameDay = d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth() && d.getDate()===now.getDate();
+  if (sameDay) return "Today";
+  return new Intl.DateTimeFormat("en-US", { month:"short", day:"numeric", year:"numeric" }).format(d);
+}
+function getSavedCalcHistory() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CALC_HISTORY_STORAGE_KEY) || "[]");
+    return Array.isArray(saved) ? saved : [];
+  } catch {
+    return [];
+  }
+}
+
+function calcReducer(state, action) {
+  switch(action.type) {
+    case "DIGIT": {
+      if (state.convertResult||state.unitType!==null) return {...initCalc(), buffer:action.d};
+      if (state.isResult) return {...initCalc(), buffer:action.d};
+      if (state.buffer.endsWith("%")) return state;
+      return {...state, buffer:state.buffer+action.d, unitJustPressed:false, minJustPressed:false};
+    }
+    case "HOUR": {
+      if (state.buffer==="") return state;
+      return {...state, hPart:parseInt(state.buffer)||0, buffer:"", isResult:false, minExplicit:false, unitJustPressed:true, minJustPressed:false};
+    }
+    case "MIN": {
+      if (state.hPart===null&&state.buffer==="") return state;
+      if (state.hPart===null) return {...state, hPart:0, minExplicit:true, unitJustPressed:true, minJustPressed:true};
+      return {...state, minExplicit:true, unitJustPressed:true, minJustPressed:true};
+    }
+    case "INCH": {
+      if (state.buffer==="") return state;
+      const v = parseFloat(state.buffer)||0;
+      return {...state, unitType:"inch", unitValue:v, buffer:"", convertResult:null, isResult:false};
+    }
+    case "FT": {
+      if (state.buffer==="") return state;
+      const v = parseFloat(state.buffer)||0;
+      return {...state, unitType:"ft", unitValue:v, buffer:"", convertResult:null, isResult:false};
+    }
+    case "CONVERT": {
+      if (state.unitType==="inch" && state.unitValue!==null) {
+        return {...state, convertResult:makeLengthConversion(state.unitValue, "inch"), unitType:null, unitValue:null};
+      }
+      if (state.unitType==="ft" && state.unitValue!==null) {
+        return {...state, convertResult:makeLengthConversion(state.unitValue, "ft"), unitType:null, unitValue:null};
+      }
+      if (state.hPart!==null) {
+        const baseMin = (parseInt(state.hPart)||0) * 60 + (parseInt(state.buffer)||0);
+        const sourceUnit = state.hPart === 0 ? "min" : "hour";
+        return {...state, buffer:"", hPart:null, convertResult:makeTimeConversion(baseMin, sourceUnit), isResult:false};
+      }
+      if (state.convertResult) {
+        return {...state, convertResult:advanceConversion(state.convertResult)};
+      }
+      return state;
+    }
+    case "PERCENT": {
+      if (state.buffer==="") return state;
+      const n = parseFloat(state.buffer);
+      if (isNaN(n)) return state;
+      if (state.buffer.endsWith("%")) return state;
+      return {...state, buffer:`${state.buffer}%`};
+    }
+    case "OP": {
+      if (state.convertResult) {
+        const entry = convertResultToToken(state.convertResult);
+        return entry ? {...initCalc(), tokens:[entry,{type:"op",v:action.op}], pendingOp:action.op} : initCalc();
+      }
+      if (state.isResult&&state.result) {
+        const prevTok = state.result.type==="scalar"
+          ? {type:"scalar",v:state.result.v,display:String(state.result.v)}
+          : state.result.type==="length"
+            ? {type:"length",value:state.result.value,unit:state.result.unit,dim:state.result.dim,base:state.result.base,display:fmtLengthStr(state.result)}
+            : {type:"time",h:state.result.h,m:state.result.m};
+        return {...initCalc(), tokens:[prevTok,{type:"op",v:action.op}], pendingOp:action.op};
+      }
+      const entry=finalizeStateEntry(state);
+      const lastTok=state.tokens[state.tokens.length-1];
+      let newTok;
+      if (!entry&&lastTok?.type==="op") newTok=[...state.tokens.slice(0,-1),{type:"op",v:action.op}];
+      else if (entry) newTok=[...state.tokens,entry,{type:"op",v:action.op}];
+      else if (lastTok && lastTok.type!=="op") newTok=[...state.tokens,{type:"op",v:action.op}];
+      else newTok=state.tokens;
+      return {...state, tokens:newTok, buffer:"", hPart:null, unitType:null, unitValue:null, minExplicit:false, pendingOp:action.op, result:null, isResult:false};
+    }
+    case "EQUALS": {
+      if (state.convertResult) {
+        const entry = convertResultToToken(state.convertResult);
+        if (!entry) return state;
+        return {...state, tokens:[entry], buffer:"", hPart:null, unitType:null, unitValue:null, convertResult:null, result:computeTokens([entry]), isResult:true, pendingOp:null};
+      }
+      const entry=finalizeStateEntry(state);
+      const finalToks=entry?[...state.tokens,entry]:state.tokens;
+      if (!finalToks.length) return state;
+      return {...state, tokens:finalToks, buffer:"", hPart:null, unitType:null, unitValue:null, minExplicit:false, result:computeTokens(finalToks), isResult:true, pendingOp:null};
+    }
+    case "CLEAR": return initCalc();
+    case "BACKSPACE": {
+      if (state.convertResult) return initCalc();
+      if (state.unitType!==null) return {...state, unitType:null, unitValue:null, buffer:String(state.unitValue||"")};
+      if (state.isResult) return initCalc();
+      // If unit (hour/min) was just pressed, undo it
+      if (state.unitJustPressed) {
+        if (state.minJustPressed) {
+          // undo min: just remove the min label, keep hPart and buffer as-is
+          return {...state, minExplicit:false, unitJustPressed:false, minJustPressed:false};
+        }
+        // undo hour: restore buffer from hPart
+        return {...state, buffer:String(state.hPart), hPart:null, minExplicit:false, unitJustPressed:false};
+      }
+      if (state.buffer.length>0) return {...state, buffer:state.buffer.slice(0,-1)};
+      if (state.hPart!==null) return {...state, buffer:String(state.hPart), hPart:null, minExplicit:false};
+      const last=state.tokens[state.tokens.length-1]; if(!last) return state;
+      const without=state.tokens.slice(0,-1);
+      if(last.type!=="op"&&without.length>0&&without[without.length-1]?.type==="op") return {...state,tokens:without.slice(0,-1),pendingOp:null};
+      return {...state,tokens:without,pendingOp:null};
+    }
+    default: return state;
+  }
+}
+
+function AcTimeTab() {
+
+  const [calc, dispatch] = useReducer(calcReducer, null, initCalc);
+
+  const [history, setHistory] = useState(getSavedCalcHistory);
+  const [showHistory, setShowHistory] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CALC_HISTORY_STORAGE_KEY, JSON.stringify(history));
+    } catch {}
+  }, [history]);
+
+  const pushHistory = (item) => {
+    if (!item || !item.expr || !item.result) return;
+    setHistory(prev => {
+      const last = prev[0];
+      if (last && last.expr === item.expr && last.result === item.result && last.kind === item.kind) return prev;
+      return [{...item, ts:Date.now()}, ...prev].slice(0,50);
+    });
+  };
+
+  // ── Equals ────────────────────────────────────────────────────────
+  const handleEquals = () => {
+    dispatch({type:"EQUALS"});
+    const entry = finalizeStateEntry(calc);
+    const finalToks = entry ? [...calc.tokens, entry] : calc.tokens;
+    if (!finalToks.length) return;
+    const result = computeTokens(finalToks);
+    if (!result) return;
+    const exprStr = finalToks.map(renderTok).join("");
+    const resultStr = fmtResultStr(result);
+    pushHistory({expr:exprStr, result:resultStr, kind:"calc"});
+  };
+
+  const handleConvert = () => {
+    const item = conversionHistoryFor(calc);
+    dispatch({type:"CONVERT"});
+    if (item) pushHistory(item);
+  };
+
+
+  // ── TIME mode display ──────────────────────────────────────────────
+  const exprStr = calc.tokens.map(renderTok).join("");
+  let liveStr = "";
+  if (!calc.isResult && !calc.convertResult && calc.unitType===null) {
+    if (calc.hPart !== null) {
+      const hDisplay = calc.hPart > 0 ? `${calc.hPart.toLocaleString()}hour ` : "";
+      const mDisplay = calc.buffer !== "" ? `${calc.buffer}${calc.minExplicit ? "min" : ""}` : "";
+      liveStr = (hDisplay + mDisplay).trim();
+    } else if (calc.buffer !== "") {
+      liveStr = calc.buffer;
+    }
+  }
+  const runningPreview = (() => {
+    if (calc.isResult || calc.convertResult || calc.unitType !== null) return null;
+    if (!calc.tokens.length) return null;
+    const lastTok = calc.tokens[calc.tokens.length-1];
+    if (!lastTok || lastTok.type !== "op") return null;
+    const tc = calc.tokens.slice(0,-1);
+    // If there is only one value, exprStr already shows it.
+    if (tc.length <= 1) return null;
+    return computeTokens(tc);
+  })();
+  const convertDisplay = (() => {
+    if (calc.unitType !== null && calc.unitValue !== null) return fmtLength(calc.unitValue, calc.unitType);
+    if (calc.convertResult) return formatConvertResult(calc.convertResult);
+    return null;
+  })();
+
+
+  const recentHistory = history.filter(h => Date.now()-h.ts < 12*3600*1000);
+
+  const Btn = ({label, act, col="#1F2937", bg="#EFEFEF", br="#E0E0E0", fs=22, onClick}) => (
+    <button
+      onClick={onClick || (()=>dispatch(act))}
+      style={{ display:"flex", alignItems:"center", justifyContent:"center", background:bg, border:`1.5px solid ${br}`, borderRadius:24, width:"100%", height:62, fontSize:fs, fontWeight:700, color:col, cursor:"pointer", transition:"filter 0.1s", overflow:"visible", touchAction:"manipulation", WebkitTapHighlightColor:"transparent", userSelect:"none" }}
+      onPointerDown={e=>e.currentTarget.style.filter="brightness(0.85)"}
+      onPointerUp={e=>e.currentTarget.style.filter=""}
+      onPointerLeave={e=>e.currentTarget.style.filter=""}
+    >{label}</button>
+  );
+
+  const N   = {bg:"#FFFFFF", br:"#D8DCE4", col:"#000000"};
+  const UTL = {bg:"#EEF5F1", br:"#D4E4DA", col:"#074630", fs:20};
+  const UNT = {bg:"#EEF5F1", br:"#D4E4DA", col:"#074630", fs:20};
+  const CLR = {bg:"#F7EEEE", br:"#E7D1D1", col:"#A85E5E"};
+  const UTY = {bg:"#EEF5F1", br:"#D4E4DA", col:"#074630", fs:20};
+  const OPR = {bg:"#FFFFFF", br:"#D8DCE4", col:"#000000", fs:24};
+  const EQL = {bg:"#FFFFFF", br:"#D8DCE4", col:"#000000", fs:24};
+
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:12, height:"100%", minHeight:0, position:"relative", touchAction:"manipulation" }}>
+
+      {/* History overlay */}
+      {showHistory && (
+        <div style={{ position:"absolute", top:0, left:0, right:0, bottom:0, background:"#F2F4F7", borderRadius:14, zIndex:10, display:"flex", flexDirection:"column", overflow:"hidden", border:"1.5px solid #E8E8E8", boxShadow:"0 4px 20px rgba(0,0,0,0.1)" }}>
+          <div style={{ background:"#E5E7EB", minHeight:40, padding:"2px 12px", display:"grid", gridTemplateColumns:"36px 1fr 36px", alignItems:"center", color:"#6B7280" }}>
+            <button onClick={()=>{ setShowDeleteConfirm(false); setShowHistory(false); }} aria-label="Back"
+              style={{ background:"transparent", border:"none", color:"#6B7280", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", height:36 }}>
+              <svg width="20" height="20" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                <path d="M19.5 7L10.5 16L19.5 25" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M11 16H27" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"/>
+              </svg>
+            </button>
+            <div style={{ textAlign:"center", fontSize:15, fontWeight:800 }}>History</div>
+            <button onClick={()=>{ if (recentHistory.length) setShowDeleteConfirm(true); }} aria-label="Delete history"
+              style={{ background:"transparent", border:"none", color:"#6B7280", opacity:recentHistory.length?1:0.35, cursor:recentHistory.length?"pointer":"default", display:"flex", alignItems:"center", justifyContent:"center", height:36 }}>
+              <svg width="23" height="23" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                <path d="M9 10H23" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"/>
+                <path d="M13 10V7.8C13 7.2 13.5 6.7 14.1 6.7H17.9C18.5 6.7 19 7.2 19 7.8V10" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"/>
+                <path d="M11 13V24.2C11 25.4 11.9 26.3 13.1 26.3H18.9C20.1 26.3 21 25.4 21 24.2V13" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"/>
+                <path d="M14.2 15.5V23M17.8 15.5V23" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+            </button>
+          </div>
+          {recentHistory.length===0
+            ? <div style={{ color:"#D1D5DB", textAlign:"center", marginTop:24, fontSize:13 }}>No history</div>
+            : <div style={{ overflowY:"auto", flex:1, display:"flex", flexDirection:"column", gap:14, padding:"16px 16px 20px" }}>
+                {recentHistory.map((h,i)=>(
+                  <div key={i} style={{ background:"#FFFFFF", border:"none", borderRadius:14, padding:"13px 16px", boxShadow:"0 1px 3px rgba(15,23,42,0.04)" }}>
+                    <div style={{ display:"grid", gridTemplateColumns:"auto minmax(0,1fr)", gap:10, alignItems:h.kind==="convert"?"center":"start" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:8, color:"#000000", minWidth:82 }}>
+                        <svg width="20" height="20" viewBox="-2 -2 22 22" fill="none" aria-hidden="true" style={{ flex:"0 0 auto" }}>
+                          <circle cx="9" cy="9" r="7.5" stroke="currentColor" strokeWidth="1.5"/>
+                          <line x1="9" y1="4.8" x2="9" y2="9.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                          <line x1="9" y1="9.2" x2="12.3" y2="11.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                        </svg>
+                        <span style={{ fontSize:11, fontWeight:800, whiteSpace:"nowrap" }}>{historyDateLabel(h.ts)}</span>
+                      </div>
+                      {h.kind==="convert" ? (
+                        <div style={{ textAlign:"right", fontSize:18, fontWeight:800, color:"#000000", lineHeight:1.2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                          {renderExpressionText(h.expr)}
+                          <span style={{ color:"#A5ACBD", fontWeight:800, margin:"0 8px" }}>↔</span>
+                          {renderExpressionText(h.result)}
+                        </div>
+                      ) : (
+                        <div style={{ minWidth:0, textAlign:"right" }}>
+                          <div style={{ fontSize:12, color:"#000000", lineHeight:1.15, fontWeight:400, wordBreak:"break-word" }}>{renderExpressionText(h.expr)}</div>
+                          <div style={{ fontSize:18, fontWeight:800, color:"#000000", lineHeight:1.25, marginTop:2 }}>
+                            <span style={{ color:"#A5ACBD", fontWeight:800, marginRight:4 }}>=</span>{renderExpressionText(h.result, {fontWeight:800}, {fontWeight:800})}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+          }
+          {showDeleteConfirm && (
+            <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0.68)", display:"flex", alignItems:"center", justifyContent:"center", padding:22, zIndex:20 }}>
+              <div style={{ width:"100%", maxWidth:360, background:"#fff", borderRadius:18, padding:"28px 22px 22px", textAlign:"center", boxShadow:"0 16px 40px rgba(0,0,0,0.22)" }}>
+                <div style={{ fontSize:20, fontWeight:900, color:"#000000", marginBottom:16 }}>DELETE ALL</div>
+                <div style={{ fontSize:15, color:"#000000", lineHeight:1.4, marginBottom:24 }}>Are you sure you want to DELETE ALL?</div>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                  <button onClick={()=>setShowDeleteConfirm(false)}
+                    style={{ height:52, border:"none", borderRadius:26, background:"#E5E7EB", color:"#8A93A3", fontSize:16, fontWeight:900, cursor:"pointer" }}>CANCEL</button>
+                  <button onClick={()=>{ setHistory([]); setShowDeleteConfirm(false); }}
+                    style={{ height:52, border:"none", borderRadius:26, background:"#000000", color:"#fff", fontSize:16, fontWeight:900, cursor:"pointer" }}>DELETE ALL</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Display */}
+      <div style={{ background:"#FFFFFF", borderRadius:14, border:"1.5px solid #E8E8E8", padding:"16px 18px", boxShadow:"0 1px 4px rgba(0,0,0,0.06)", flex:"1 1 auto", minHeight:150, display:"flex", flexDirection:"column", justifyContent:"space-between" }}>
+
+      {/* Top row: history button and expression */}
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", minWidth:0 }}>
+          <button onClick={()=>setShowHistory(v=>!v)} style={{ background:"none", border:"none", cursor:"pointer", padding:"2px 4px", lineHeight:1, display:"flex", alignItems:"center", flexShrink:0 }}>
+            <svg width="22" height="22" viewBox="-2 -2 22 22" fill="none">
+              <circle cx="9" cy="9" r="7.5" stroke="#000000" strokeWidth="1.4"/>
+              <line x1="9" y1="4.5" x2="9" y2="9" stroke="#000000" strokeWidth="1.4" strokeLinecap="round"/>
+              <line x1="9" y1="9" x2="12.5" y2="11" stroke="#000000" strokeWidth="1.4" strokeLinecap="round"/>
+            </svg>
+          </button>
+          <div style={{ flex:1, minWidth:0, textAlign:"right", marginLeft:4 }}>
+            {!calc.isResult && exprStr && (
+              <div style={{ fontSize:14, color:"#9CA3AF", whiteSpace:"normal", overflowWrap:"anywhere", wordBreak:"break-word", lineHeight:1.4, fontWeight:400, maxWidth:"100%" }}>
+                {renderExpressionText(exprStr)}
+              </div>
+            )}
+            {calc.isResult && exprStr && calc.tokens.length > 1 && (
+              <div style={{ fontSize:14, fontWeight:400, color:"#9CA3AF", lineHeight:1.4, whiteSpace:"normal", overflowWrap:"anywhere", wordBreak:"break-word", maxWidth:"100%" }}>
+                {renderExpressionText(exprStr)}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Bottom row: current input, preview, or result */}
+        <div style={{ textAlign:"right" }}>
+          {convertDisplay && (
+            <div style={{ fontSize:26, color:"#000000", fontWeight:400 }}>{renderExpressionText(convertDisplay, {color:GRN,fontSize:"0.6em",fontWeight:700})}</div>
+          )}
+          {/* After equals: result */}
+          {calc.isResult && calc.result && (
+            <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end" }}>
+              <div style={{ fontSize:26, fontWeight:400, color:calc.result.neg?"#DC2626":"#000000", lineHeight:1.1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:"100%" }}>
+                {calc.result.type==="scalar"
+                  ? calc.result.v.toLocaleString(undefined,{maximumFractionDigits:10})
+                  : calc.result.type==="length"
+                    ? renderExpressionText(fmtLengthStr(calc.result), {color:GRN,fontSize:"0.6em",fontWeight:700})
+                    : fmtHM(calc.result)}
+              </div>
+            </div>
+          )}
+          {/* While entering before an operator: large current value */}
+          {!calc.isResult && liveStr && !runningPreview && (
+            <div style={{ fontSize:26, color:"#000000", fontWeight:400, lineHeight:1.1 }}>
+              {liveStr.split(/(hour|min|inch|ft|cm|%)/).map((part,i)=>
+                part==="hour"||part==="min"||part==="inch"||part==="ft"||part==="cm"||part==="%"
+                  ? <span key={i} style={{color:GRN,fontWeight:700,fontSize:"0.6em"}}>{part}</span>
+                  : part
+              )}
+            </div>
+          )}
+          {/* After an operator: small gray preview */}
+          {!calc.isResult && runningPreview && (
+            <div style={{ fontSize:14, fontWeight:400, color:"#9CA3AF", lineHeight:1.4, whiteSpace:"nowrap" }}>
+              {runningPreview.type==="scalar"
+                ? runningPreview.v.toLocaleString(undefined,{maximumFractionDigits:10})
+                : runningPreview.type==="length"
+                  ? renderExpressionText(fmtLengthStr(runningPreview), {color:"#C8DDD3",fontSize:"0.6em"})
+                  : <><span>{runningPreview.neg?"-":""}{runningPreview.h.toLocaleString()}</span>
+                    <span style={{color:"#C8DDD3",fontSize:"0.6em"}}>hour</span>
+                    <span style={{marginLeft:4}}>{pad(runningPreview.m)}</span>
+                    <span style={{color:"#C8DDD3",fontSize:"0.6em"}}>min</span></>
+              }
+            </div>
+          )}
+          {/* After an operator and next input: large current value */}
+          {!calc.isResult && liveStr && runningPreview && (
+            <div style={{ fontSize:26, color:"#000000", fontWeight:400, lineHeight:1.1 }}>
+              {liveStr.split(/(hour|min|inch|ft|cm|%)/).map((part,i)=>
+                part==="hour"||part==="min"||part==="inch"||part==="ft"||part==="cm"||part==="%"
+                  ? <span key={i} style={{color:GRN,fontWeight:700,fontSize:"0.6em"}}>{part}</span>
+                  : part
+              )}
+            </div>
+          )}
+          {/* Empty state */}
+        </div>
+      </div>
+
+      {/* Keypad */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:6 }}>
+        {/* Row 1: C  %  ↺  ⌫ */}
+        <Btn label="C"  act={{type:"CLEAR"}}   {...CLR} />
+        <Btn label="%"  act={{type:"PERCENT"}} {...UTY} />
+        <Btn label={
+          <svg width="28" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <path d="M4.5 10.5H9.2C12.1 10.5 13.8 12.2 15.6 16C17.4 19.8 19.5 21.5 23.6 21.5H26.7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/>
+            <path d="M24.4 18.1L28 21.5L24.4 24.9" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M4.5 21.5H9.2C12.1 21.5 13.8 19.8 15.6 16C17.4 12.2 19.5 10.5 23.6 10.5H26.7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/>
+            <path d="M24.4 7.1L28 10.5L24.4 13.9" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        } act={null} {...UTY} onClick={handleConvert} />
+        <Btn label="⌫"  act={{type:"BACKSPACE"}} {...CLR} />
+        <Btn label="inch" act={{type:"INCH"}} {...UNT} />
+        <Btn label="ft"   act={{type:"FT"}}   {...UNT} />
+        <Btn label="hour" act={{type:"HOUR"}} {...UTL} />
+        <Btn label="min"  act={{type:"MIN"}}  {...UTL} />
+        {/* Rows 3-6: numbers and operators */}
+        <Btn label="7" act={{type:"DIGIT",d:"7"}} {...N} />
+        <Btn label="8" act={{type:"DIGIT",d:"8"}} {...N} />
+        <Btn label="9" act={{type:"DIGIT",d:"9"}} {...N} />
+        <Btn label="÷" act={{type:"OP",op:"÷"}}   {...OPR} />
+        <Btn label="4" act={{type:"DIGIT",d:"4"}} {...N} />
+        <Btn label="5" act={{type:"DIGIT",d:"5"}} {...N} />
+        <Btn label="6" act={{type:"DIGIT",d:"6"}} {...N} />
+        <Btn label="×" act={{type:"OP",op:"×"}}   {...OPR} />
+        <Btn label="1" act={{type:"DIGIT",d:"1"}} {...N} />
+        <Btn label="2" act={{type:"DIGIT",d:"2"}} {...N} />
+        <Btn label="3" act={{type:"DIGIT",d:"3"}} {...N} />
+        <Btn label="−" act={{type:"OP",op:"-"}}   {...OPR} />
+        <Btn label="0" act={{type:"DIGIT",d:"0"}} {...N} />
+        <Btn label="." act={{type:"DIGIT",d:"."}} {...N} />
+        <Btn label="=" act={null} {...EQL} onClick={handleEquals} />
+        <Btn label="+" act={{type:"OP",op:"+"}}    {...OPR} />
+      </div>
+
+    </div>
+  );
+}
+
+const TABS=[
+  {id:"actime", label:"Calc."},
+  {id:"mel",    label:"MEL"},
+  {id:"moi",    label:"NEF·MOI"},
+  {id:"etc",    label:"ETC"},
+];
+
+function SideMenu({ open, onClose }) {
+  const [fltLogMemo, setFltLogMemo] = useState(() => {
+    try {
+      return localStorage.getItem(FLT_LOG_MEMO_STORAGE_KEY) || "";
+    } catch {
+      return "";
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(FLT_LOG_MEMO_STORAGE_KEY, fltLogMemo);
+    } catch {}
+  }, [fltLogMemo]);
+  if (!open) return null;
+
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:500, display:"flex" }}>
+      <button aria-label="Close menu" onClick={onClose}
+        style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0.34)", border:"none", cursor:"default" }} />
+      <aside style={{ position:"relative", width:"min(82vw, 320px)", height:"100%", background:"#F8FAFC", boxShadow:"8px 0 24px rgba(15,23,42,0.18)", padding:"18px 16px calc(18px + env(safe-area-inset-bottom))", display:"flex", flexDirection:"column", gap:14 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
+          <div>
+            <div style={{ fontSize:18, fontWeight:900, color:"#000000" }}>Maint Tool</div>
+          </div>
+          <button onClick={onClose} aria-label="Close menu"
+            style={{ width:32, height:32, border:"1px solid #E5E7EB", borderRadius:8, background:"#fff", color:"#374151", fontSize:20, lineHeight:"28px", cursor:"pointer" }}>
+            ×
+          </button>
+        </div>
+
+        <div style={{ display:"flex", flexDirection:"column", gap:10, marginTop:4, flex:"1 1 auto", minHeight:0 }}>
+          <div style={{ background:"#fff", border:"1.5px solid #E5E7EB", borderRadius:12, padding:12, display:"flex", flexDirection:"column", gap:10, flex:"1 1 auto", minHeight:0 }}>
+            <div>
+              <div style={{ fontSize:15, fontWeight:900, color:"#000000", letterSpacing:"0.01em" }}>FLT LOG Memo</div>
+              <div style={{ fontSize:11, color:"#6B7280", lineHeight:1.35, marginTop:3 }}>Draft notes before writing them into the aircraft log.</div>
+            </div>
+            <textarea
+              value={fltLogMemo}
+              onChange={e=>setFltLogMemo(e.target.value)}
+              placeholder={"Example:\n- DEFECT\n- ACTION TAKEN\n- REF / TIME / NAME"}
+              style={{ width:"100%", flex:"1 1 auto", minHeight:220, resize:"none", border:"1.5px solid #E5E7EB", borderRadius:10, padding:"12px", outline:"none", color:"#000000", background:"#F8FAFC", fontSize:16, lineHeight:1.45, fontFamily:"inherit" }}
+            />
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10 }}>
+              <span style={{ fontSize:11, color:"#9CA3AF" }}>{fltLogMemo.length.toLocaleString()} chars</span>
+              <button
+                type="button"
+                onClick={()=>setFltLogMemo("")}
+                style={{ border:"1.5px solid #E5E7EB", background:"#fff", color:"#000000", borderRadius:9, padding:"8px 12px", fontSize:12, fontWeight:800, cursor:"pointer" }}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ marginTop:"auto", padding:"12px 2px 0", borderTop:"1px solid #E5E7EB" }}>
+          <div style={{ fontSize:11, color:"#9CA3AF", textAlign:"right", lineHeight:1.45 }}>
+            Version {APP_VERSION}
+          </div>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function App() {
+  const [tab,setTab]=useState("actime");
+  const [menuOpen,setMenuOpen]=useState(false);
+  const [slideDir,setSlideDir]=useState(0);
+  const [animKey,setAnimKey]=useState(0);
+  const [tzActive,setTzActive]=useState({UTC:true,KST:true});
+  const [selectedTz,setSelectedTz]=useState(getSavedTz);
+  const TAB_IDS = TABS.map(t=>t.id);
+  const swipeRef = useRef({});
+  const tzOffset = findTz(selectedTz);
+
+  useEffect(()=>{
+    try {
+      localStorage.setItem(TZ_STORAGE_KEY, tzOffset.zone);
+    } catch {}
+  }, [tzOffset.zone]);
+
+  const switchTab = (nextTab, forcedDir = null) => {
+    if (nextTab === tab) return;
+    const cur = TAB_IDS.indexOf(tab);
+    const next = TAB_IDS.indexOf(nextTab);
+    setSlideDir(forcedDir ?? (next > cur ? 1 : -1));
+    setAnimKey(n=>n+1);
+    setTab(nextTab);
+  };
+
+  const handleTouchStart = (e) => {
+    swipeRef.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+      moved: false,
+    };
+  };
+
+  const handleTouchEnd = (e) => {
+    const s = swipeRef.current;
+    if (!s.x) return;
+    const dx = e.changedTouches[0].clientX - s.x;
+    const dy = e.changedTouches[0].clientY - s.y;
+    // Horizontal swipe: movement must be wider than vertical and at least 45px.
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 45) {
+      const cur = TAB_IDS.indexOf(tab);
+      if (dx < 0) switchTab(TAB_IDS[(cur + 1) % TAB_IDS.length], 1);
+      if (dx > 0) switchTab(TAB_IDS[(cur - 1 + TAB_IDS.length) % TAB_IDS.length], -1);
+    }
+    swipeRef.current = {};
+  };
+
+  return (
+    <div
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      style={{ height:"100dvh", background:"#F2F4F7", fontFamily:"-apple-system,'Helvetica Neue',sans-serif", display:"flex", flexDirection:"column", overflow:"hidden", touchAction:"pan-x" }}>
+      <SideMenu open={menuOpen} onClose={()=>setMenuOpen(false)} />
+      <Header tzActive={tzActive} setTzActive={setTzActive} selectedTz={selectedTz} setSelectedTz={setSelectedTz} onTitleClick={()=>switchTab("actime")} onMenuClick={()=>setMenuOpen(true)} />
+      <div style={{ background:"#fff", display:"flex", borderBottom:"2px solid #F0F0F0" }}>
+        {TABS.map(({id,label})=>{
+          const active=tab===id;
+          return (
+            <button key={id} onClick={()=>switchTab(id)} style={{ flex:1, padding:"16px 2px", background:"transparent", border:"none", borderBottom:active?"2px solid #000000":"2px solid transparent", marginBottom:-2, color:active?"#000000":"#9CA3AF", fontWeight:800, fontSize:18, cursor:"pointer", letterSpacing:"0.02em", transition:"all 0.15s", whiteSpace:"nowrap" }}>
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      <div key={`${tab}-${animKey}`} className="tab-panel" style={{ flex:"1 1 auto", minHeight:0, width:"100%", padding:tab==="actime"?"14px 14px 10px":"14px 14px 20px", maxWidth:520, margin:"0 auto", overflow:"hidden", animation: slideDir===0 ? "none" : `${slideDir>0?"tabSlideFromRight":"tabSlideFromLeft"} 180ms ease-out` }}>
+        {tab==="mel"    && <MelTab    tzActive={tzActive} selectedTz={selectedTz} tzOffset={tzOffset} />}
+        {tab==="etc"    && <EtcTab    tzActive={tzActive} selectedTz={selectedTz} tzOffset={tzOffset} />}
+        {tab==="moi"    && <MoiNefTab tzActive={tzActive} selectedTz={selectedTz} tzOffset={tzOffset} />}
+        {tab==="actime" && <AcTimeTab />}
+      </div>
+      <div aria-hidden="true" style={{ flexShrink:0, height:"38px", borderTop:"1px solid #EBEBEB" }} />
+    </div>
+  );
+}
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+  </script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js');
+      });
+    }
+  </script>
+</body>
+</html>
