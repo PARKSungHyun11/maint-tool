@@ -11,3 +11,5 @@ This is a static web app. It can be hosted from the repository root with GitHub 
 - Pages source: `main` branch, `/ (root)`
 
 The app uses relative paths for the manifest and service worker so it works from a GitHub Pages project URL such as `/maint-tool/`.
+
+Deployment trigger: 2026-07-05 16:12 KST
