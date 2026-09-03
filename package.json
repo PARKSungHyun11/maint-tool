@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=22.13"
+  },
   "description": "Offline aircraft maintenance dispatch utility for iOS, Android, and the web.",
   "type": "module",
   "scripts": {
