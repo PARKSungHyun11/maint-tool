@@ -2,13 +2,30 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  advanceConversion,
   calcDuePair,
+  fmtHMStr,
+  formatConvertResult,
   getPartsInZone,
+  LENGTH_CONVERSION_UNITS,
+  lengthValueFromBase,
+  lengthValueFromBaseDim,
   makeLengthConversion,
+  makeLengthToken,
+  makeTimeConversion,
+  timeValueFromBase,
+  tMins,
+  toHM,
+  toSup,
   zonedDateToUtc,
 } from "../lib/core.js";
 
 const pad = (value) => String(value).padStart(2, "0");
+
+// Some assertions below compare strings built with toLocaleString. Skip those
+// on a runner whose locale uses a different decimal separator rather than
+// pinning the suite to one locale.
+const DOT_DECIMAL = (1.5).toLocaleString() === "1.5";
 
 function wall(date, zone) {
   const parts = getPartsInZone(date, zone);
@@ -93,4 +110,83 @@ test("centimetres are converted through inches instead of treated as inches", ()
   assert.ok(Math.abs(makeLengthConversion(254, "cm").baseInch - 100) < 1e-9);
   assert.equal(makeLengthConversion(1, "ft").baseInch, 12);
   assert.equal(makeLengthConversion(5, "inch").baseInch, 5);
+});
+
+// These helpers were defined inside app.jsx until this branch, where no Node
+// test could reach them. app.jsx also kept its own copies of
+// lengthFactorToInch and orderedLengthConversionUnits, so the cm conversion
+// path ran through two parallel tables that a fix to either would have split.
+test("length conversion agrees across every unit and entry point", () => {
+  assert.equal(lengthValueFromBase(12, "ft"), 1);
+  assert.equal(lengthValueFromBase(12, "inch"), 12);
+  assert.ok(Math.abs(lengthValueFromBase(1, "cm") - 2.54) < 1e-12);
+
+  // makeLengthConversion and makeLengthToken must reduce to the same inches.
+  for (const unit of LENGTH_CONVERSION_UNITS) {
+    assert.ok(
+      Math.abs(makeLengthConversion(7, unit).baseInch - makeLengthToken(7, unit).base) < 1e-9,
+      unit,
+    );
+  }
+
+  // Round-trip: base -> unit -> base holds for every unit.
+  for (const unit of LENGTH_CONVERSION_UNITS) {
+    const roundTripped = makeLengthConversion(lengthValueFromBase(100, unit), unit).baseInch;
+    assert.ok(Math.abs(roundTripped - 100) < 1e-9, unit);
+  }
+
+  // Squared units divide by the factor twice.
+  assert.equal(lengthValueFromBaseDim(144, "ft", 2), 1);
+  assert.ok(Math.abs(lengthValueFromBaseDim(1, "cm", 2) - 6.4516) < 1e-9);
+});
+
+test("cycling a conversion visits each unit once and returns to the source", () => {
+  let result = makeLengthConversion(12, "inch");
+  const seen = [];
+  for (let i = 0; i < LENGTH_CONVERSION_UNITS.length; i += 1) {
+    seen.push(result.unit);
+    assert.ok(LENGTH_CONVERSION_UNITS.includes(result.unit), result.unit);
+    result = advanceConversion(result);
+  }
+  assert.equal(new Set(seen).size, LENGTH_CONVERSION_UNITS.length);
+  assert.equal(result.unit, seen[0], "a full cycle returns to where it started");
+
+  const time = makeTimeConversion(90, "min");
+  assert.equal(time.unit, "hour");
+  assert.equal(advanceConversion(time).unit, "min");
+  assert.equal(advanceConversion(null), null);
+});
+
+test("durations convert between minutes and hour/minute pairs", () => {
+  assert.equal(tMins({ h: 2, m: 30 }), 150);
+  assert.deepEqual(toHM(150), { h: 2, m: 30, neg: false });
+  assert.deepEqual(toHM(-90), { h: 1, m: 30, neg: true });
+  assert.deepEqual(toHM(0), { h: 0, m: 0, neg: false });
+
+  // The UI adds durations as minutes, so this is the path behind 2h30m + 145h.
+  assert.deepEqual(toHM(tMins({ h: 2, m: 30 }) + tMins({ h: 145, m: 0 })), {
+    h: 147,
+    m: 30,
+    neg: false,
+  });
+
+  assert.equal(timeValueFromBase(90, "hour"), 1.5);
+  assert.equal(timeValueFromBase(90, "min"), 90);
+});
+
+test("formatting keeps the minute padded and exponents superscripted", () => {
+  assert.equal(fmtHMStr({ h: 2, m: 5, neg: false }), "2hour 05min");
+  assert.equal(fmtHMStr({ h: 2, m: 5, neg: true }), "-2hour 05min");
+  assert.equal(toSup(2), "²");
+  assert.equal(toSup(-3), "⁻³");
+});
+
+test("a formatted conversion lists every unit with the source last", { skip: !DOT_DECIMAL }, () => {
+  assert.equal(formatConvertResult(makeLengthConversion(12, "inch")), "1 ft < 30.48 cm < 12 inch");
+  assert.equal(formatConvertResult(makeLengthConversion(1, "ft")), "12 inch < 30.48 cm < 1 ft");
+  // fmtRoundedValue rounds to 4 decimals, then toLocaleString shows at most 3
+  // fraction digits by default — so 100/12 displays as 8.333, not 8.3333.
+  assert.equal(formatConvertResult(makeLengthConversion(254, "cm")), "100 inch < 8.333 ft < 254 cm");
+  assert.equal(formatConvertResult(makeTimeConversion(90, "min")), "1.5 hour");
+  assert.equal(formatConvertResult(null), "");
 });

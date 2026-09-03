@@ -20,13 +20,34 @@ import {
   syncDraftsToCloud,
 } from "./src/app-services.js";
 import {
+  advanceConversion,
   calcDuePair,
+  fmtHMShort,
+  fmtHMStr,
+  fmtLength,
+  fmtLengthStr,
+  fmtNum,
+  fmtResultStr,
+  fmtRoundedValue,
+  fmtUnitValue,
+  formatConvertResult,
   getOffsetMs,
   getPartsInZone,
+  LENGTH_CONVERSION_UNITS,
+  lengthFactorToInch,
+  lengthValueFromBase,
+  lengthValueFromBaseDim,
   makeLengthConversion,
+  makeLengthToken,
+  makeTimeConversion,
+  orderedLengthConversionUnits,
+  pad,
+  timeValueFromBase,
+  tMins,
+  toHM,
+  toSup,
 } from "./lib/core.js";
 
-const pad = (n) => String(n).padStart(2, "0");
 const DOW_EN = ["SUN","MON","TUE","WED","THU","FRI","SAT"];
 const MON3   = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
 const TZ_STORAGE_KEY = "maintTimerSelectedTz";
@@ -895,31 +916,12 @@ function MoiNefTab({tzActive, selectedTz, tzOffset, onNameChange}) {
 }
 
 // ─── A/C Time Calculator ──────────────────────────────────────────────────────
-function tMins({h,m}){ return h*60+m; }
-function toHM(tm){ const neg=tm<0,abs=Math.abs(Math.round(tm)); return {h:Math.floor(abs/60),m:abs%60,neg}; }
 
 const CALC_BLUE = APP_MUTED_BLUE;
 const CALC_BLUE_MUTED = "#8799BC";
 const CALC_FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', sans-serif";
 const CALC_FONT_WEIGHT = 700;
 const CALC_HISTORY_FONT_WEIGHT = 400;
-function fmtNum(value) {
-  return parseFloat(Number(value).toFixed(10)).toLocaleString(undefined,{maximumFractionDigits:10});
-}
-function toSup(n) {
-  const map = {"0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹","-":"⁻"};
-  return String(n).split("").map(ch=>map[ch] ?? ch).join("");
-}
-function fmtHMStr({h,m,neg}){ return `${neg?"-":""}${h.toLocaleString()}hour ${pad(m)}min`; }
-function fmtLengthStr({value,unit,dim=1,neg}) {
-  return `${neg?"-":""}${fmtNum(Math.abs(value))}${unit}${dim>1?toSup(dim):""}`;
-}
-function fmtResultStr(result) {
-  if (!result) return "";
-  if (result.type==="scalar") return result.v.toLocaleString(undefined,{maximumFractionDigits:10});
-  if (result.type==="length") return fmtLengthStr(result);
-  return fmtHMStr(result);
-}
 function fmtHM({h,m,neg}) {
   return (
     <span>
@@ -931,66 +933,7 @@ function fmtHM({h,m,neg}) {
     </span>
   );
 }
-function fmtHMShort({h,m}){ return `${h.toLocaleString()}hour ${pad(m)}min`; }
 
-function fmtRoundedValue(value) {
-  return parseFloat(value.toFixed(4)).toLocaleString();
-}
-function fmtLength(value, unit) {
-  return `${fmtRoundedValue(value)} ${unit}`;
-}
-function fmtUnitValue(value, unit) {
-  return `${fmtRoundedValue(value)} ${unit}`;
-}
-function lengthValueFromBase(baseInch, unit) {
-  if (unit === "inch") return baseInch;
-  if (unit === "ft") return baseInch / 12;
-  if (unit === "cm") return baseInch * 2.54;
-  return baseInch;
-}
-function lengthFactorToInch(unit) {
-  if (unit === "ft") return 12;
-  if (unit === "cm") return 1 / 2.54;
-  return 1;
-}
-function lengthValueFromBaseDim(base, unit, dim=1) {
-  return base / Math.pow(lengthFactorToInch(unit), dim);
-}
-function makeLengthToken(value, unit) {
-  return { type:"length", value, unit, dim:1, base: value * lengthFactorToInch(unit), display:`${value}${unit}` };
-}
-function timeValueFromBase(baseMin, unit) {
-  return unit === "hour" ? baseMin / 60 : baseMin;
-}
-const LENGTH_CONVERSION_UNITS = ["inch", "ft", "cm"];
-function orderedLengthConversionUnits(sourceUnit) {
-  if (!LENGTH_CONVERSION_UNITS.includes(sourceUnit)) return LENGTH_CONVERSION_UNITS;
-  return LENGTH_CONVERSION_UNITS.filter(unit => unit !== sourceUnit).concat(sourceUnit);
-}
-function makeTimeConversion(baseMin, sourceUnit) {
-  return { kind:"time", baseMin, unit:sourceUnit === "min" ? "hour" : "min" };
-}
-function advanceConversion(result) {
-  if (!result) return null;
-  if (result.kind === "length") {
-    const order = orderedLengthConversionUnits(result.sourceUnit);
-    const idx = order.indexOf(result.unit);
-    return {...result, unit: order[(idx + 1) % order.length], sourceUnit:result.sourceUnit || result.unit};
-  }
-  if (result.kind === "time") {
-    return {...result, unit: result.unit === "hour" ? "min" : "hour"};
-  }
-  return result;
-}
-function formatConvertResult(result) {
-  if (!result) return "";
-  if (result.kind === "length") {
-    const order = orderedLengthConversionUnits(result.sourceUnit || result.unit);
-    return order.map(unit => fmtUnitValue(lengthValueFromBase(result.baseInch, unit), unit)).join(" < ");
-  }
-  if (result.kind === "time") return fmtUnitValue(timeValueFromBase(result.baseMin, result.unit), result.unit);
-  return fmtUnitValue(result.value, result.unit);
-}
 function standaloneConversionSheetFor(state) {
   if (state.tokens.length) return null;
 
