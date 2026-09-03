@@ -8,7 +8,10 @@
   <meta name="apple-mobile-web-app-title" content="Maint Tool" />
   <meta name="theme-color" content="#ffffff" />
   <link rel="manifest" href="manifest.json" />
-  <link rel="apple-touch-icon" href="icon.svg" />
+  <!-- Safari ignores an SVG here and falls back to a page screenshot. -->
+  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
   <title>Maint Tool</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -29,19 +32,79 @@
     @media (prefers-reduced-motion: reduce) {
       .tab-panel { animation: none !important; }
     }
+    [hidden] { display: none !important; }
+    #cdn-fallback { display: flex; align-items: center; justify-content: center; height: 100dvh; padding: 20px; }
+    .cdn-fallback-card {
+      max-width: 420px; background: #fff; border: 1.5px solid #E8E8E8; border-left: 4px solid #9B2335;
+      border-radius: 0 12px 12px 0; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .cdn-fallback-card h1 { font-size: 17px; font-weight: 800; margin-bottom: 10px; color: #000; }
+    .cdn-fallback-card p { font-size: 13px; line-height: 1.6; color: #4B5563; margin-bottom: 10px; }
+    .cdn-fallback-card ul { font-size: 13px; line-height: 1.7; color: #4B5563; padding-left: 18px; margin-bottom: 16px; }
+    .cdn-fallback-card button {
+      background: #101827; color: #fff; border: none; border-radius: 8px;
+      padding: 10px 18px; font-size: 14px; font-weight: 700; cursor: pointer;
+    }
   </style>
 </head>
 <body>
   <div id="root"></div>
+  <div id="cdn-fallback" hidden>
+    <div class="cdn-fallback-card">
+      <h1>Maint Tool could not start</h1>
+      <p>The app loads React from a CDN and one of those files did not arrive. This is
+        almost always a network problem rather than a fault in your saved data.</p>
+      <ul>
+        <li>Check your connection, then reload.</li>
+        <li>On a captive Wi-Fi portal, sign in first.</li>
+        <li>Once the app has loaded successfully on this device, it also works offline.</li>
+      </ul>
+      <button type="button" onclick="location.reload()">Reload</button>
+    </div>
+  </div>
+  <script src="lib/core.js"></script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+  <script>
+    // These <script> tags are render-blocking, so by the time this runs each
+    // one has either defined its global or failed. Without this the page just
+    // stays blank white, which reads as data loss rather than a network error.
+    (function () {
+      var fallback = document.getElementById('cdn-fallback');
+      function show() {
+        if (!fallback.hidden) return;
+        document.getElementById('root').hidden = true;
+        fallback.hidden = false;
+      }
+      var missing = ['React', 'ReactDOM', 'Babel', 'MaintCore'].filter(function (g) {
+        return typeof window[g] === 'undefined';
+      });
+      if (missing.length) { show(); return; }
+      // Babel compiles the JSX bundle asynchronously; catch a transform or
+      // render error too, not just a failed download.
+      window.addEventListener('load', function () {
+        setTimeout(function () {
+          if (!document.getElementById('root').firstChild) show();
+        }, 4000);
+      });
+    })();
+  </script>
   <script type="text/babel" data-presets="env,react">
 const { useState, useEffect, useReducer, useRef } = React;
+// Pure date/timezone/unit maths lives in lib/core.js so it can be unit tested.
+const {
+  pad, DOW_EN, MON3,
+  getPartsInZone, getOffsetMs, zonedDateToUtc,
+  fmtDateCompact, fmt29MARZone, fmt29MAR, fmtTimeZone, fmtTimeUTC, fmtUtcOffset,
+  calcDuePair,
+  tMins, toHM, fmtNum, toSup, fmtHMStr, fmtHMShort, fmtLengthStr, fmtResultStr,
+  LENGTH_CONVERSION_UNITS, fmtLength, fmtUnitValue,
+  lengthValueFromBase, lengthFactorToInch, lengthValueFromBaseDim, makeLengthToken,
+  timeValueFromBase, orderedLengthConversionUnits, makeLengthConversion,
+  makeTimeConversion, advanceConversion, formatConvertResult,
+} = MaintCore;
 
-const pad = (n) => String(n).padStart(2, "0");
-const DOW_EN = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-const MON3   = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
 const TZ_STORAGE_KEY = "maintTimerSelectedTz";
 const CALC_HISTORY_STORAGE_KEY = "maintToolCalcHistory";
 const FLT_LOG_MEMO_STORAGE_KEY = "maintToolFltLogMemo";
@@ -263,42 +326,6 @@ function blurActiveInput() {
     el.blur();
   }
 }
-function getPartsInZone(date, timeZone) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone, hourCycle:"h23", year:"numeric", month:"2-digit", day:"2-digit",
-    hour:"2-digit", minute:"2-digit", second:"2-digit"
-  }).formatToParts(date);
-  return Object.fromEntries(parts.filter(p=>p.type!=="literal").map(p=>[p.type, Number(p.value)]));
-}
-function getOffsetMs(date, timeZone) {
-  const p = getPartsInZone(date, timeZone);
-  return Date.UTC(p.year, p.month-1, p.day, p.hour, p.minute, p.second) - date.getTime();
-}
-function zonedDateToUtc(y, mo, d, h, m, timeZone) {
-  let utc = Date.UTC(y, mo, d, h, m, 0, 0);
-  for (let i=0; i<3; i++) utc = Date.UTC(y, mo, d, h, m, 0, 0) - getOffsetMs(new Date(utc), timeZone);
-  return utc;
-}
-const fmtDateCompact = (day, month, year) => `${pad(day)} ${MON3[month]} ${String(year).slice(2)}`;
-function fmt29MARZone(date, timeZone="UTC") {
-  if (!date||isNaN(date)) return "—";
-  const p = getPartsInZone(date, timeZone);
-  const dow = new Intl.DateTimeFormat("en-US", {timeZone, weekday:"short"}).format(date);
-  return `${fmtDateCompact(p.day, p.month-1, p.year)} (${dow})`;
-}
-function fmtTimeZone(date, timeZone) {
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone, hourCycle:"h23", hour:"2-digit", minute:"2-digit", second:"2-digit"
-  }).format(date);
-}
-function fmtUtcOffset(date, timeZone) {
-  const mins = Math.round(getOffsetMs(date, timeZone) / 60000);
-  const sign = mins >= 0 ? "+" : "-";
-  const abs = Math.abs(mins);
-  const h = Math.floor(abs / 60);
-  const m = abs % 60;
-  return `UTC${sign}${h}${m ? `:${pad(m)}` : ""}`;
-}
 function TimeText({ value, active, color }) {
   const [hh="--", mm="--", ss="--"] = String(value || "--:--:--").split(":");
   const c = active ? color : "#CCC";
@@ -312,48 +339,6 @@ function TimeText({ value, active, color }) {
 }
 
 // Returns {utc, local} due dates. Custom dates use the chosen timezone's 23:59 cutoff.
-function calcDuePair(type, customDays, useCustom, customDateStr, localZone="Asia/Seoul", customTz="UTC") {
-  const daysMap = {A: parseInt(customDays)||0, B:3, C:10, D:120, MOI:240};
-
-  let utcBaseMs, localBaseMs;
-  if (useCustom && customDateStr) {
-    const parts = customDateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (!parts) return {utc:null, local:null};
-    const y=parseInt(parts[1]), mo=parseInt(parts[2])-1, d=parseInt(parts[3]);
-    const baseMs = customTz === "UTC"
-      ? Date.UTC(y, mo, d, 23, 59, 0, 0)
-      : zonedDateToUtc(y, mo, d, 23, 59, localZone);
-    utcBaseMs = baseMs;
-    localBaseMs = baseMs;
-  } else {
-    const now = new Date();
-    const utcY=now.getUTCFullYear(), utcMo=now.getUTCMonth(), utcD=now.getUTCDate();
-    const local = getPartsInZone(now, localZone);
-    utcBaseMs = Date.UTC(utcY, utcMo, utcD, 23, 59, 0, 0);
-    localBaseMs = zonedDateToUtc(local.year, local.month-1, local.day, 23, 59, localZone);
-  }
-
-  function applyType(baseMs) {
-    const d = new Date(baseMs);
-    if (type === "NEF") {
-      d.setUTCFullYear(d.getUTCFullYear() + 2);
-    } else {
-      const days = daysMap[type] ?? 0;
-      d.setUTCDate(d.getUTCDate() + days);
-    }
-    return d;
-  }
-
-  return { utc: applyType(utcBaseMs), local: applyType(localBaseMs) };
-}
-function fmt29MAR(date) {
-  if (!date||isNaN(date)) return "—";
-  return `${fmtDateCompact(date.getUTCDate(), date.getUTCMonth(), date.getUTCFullYear())} (${DOW_EN[date.getUTCDay()]})`;
-}
-function fmtTimeUTC(date) {
-  if (!date||isNaN(date)) return "";
-  return `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
-}
 
 function DueResult({ dueUTC, dueLocal, tzActive, accent, label, selectedTz, customTzMode=null }) {
   if (!dueUTC && !dueLocal) return null;
@@ -822,28 +807,9 @@ function MoiNefTab({tzActive, selectedTz, tzOffset}) {
 }
 
 // ─── A/C Time Calculator ──────────────────────────────────────────────────────
-function tMins({h,m}){ return h*60+m; }
-function toHM(tm){ const neg=tm<0,abs=Math.abs(Math.round(tm)); return {h:Math.floor(abs/60),m:abs%60,neg}; }
 
 const GRN = "#4A7C5E";
 const EXPR_UNIT_GRN = "#89A99A";
-function fmtNum(value) {
-  return parseFloat(Number(value).toFixed(10)).toLocaleString(undefined,{maximumFractionDigits:10});
-}
-function toSup(n) {
-  const map = {"0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹","-":"⁻"};
-  return String(n).split("").map(ch=>map[ch] ?? ch).join("");
-}
-function fmtHMStr({h,m,neg}){ return `${neg?"-":""}${h.toLocaleString()}hour ${pad(m)}min`; }
-function fmtLengthStr({value,unit,dim=1,neg}) {
-  return `${neg?"-":""}${fmtNum(Math.abs(value))}${unit}${dim>1?toSup(dim):""}`;
-}
-function fmtResultStr(result) {
-  if (!result) return "";
-  if (result.type==="scalar") return result.v.toLocaleString(undefined,{maximumFractionDigits:10});
-  if (result.type==="length") return fmtLengthStr(result);
-  return fmtHMStr(result);
-}
 function fmtHM({h,m,neg}) {
   return (
     <span>
@@ -855,70 +821,7 @@ function fmtHM({h,m,neg}) {
     </span>
   );
 }
-function fmtHMShort({h,m}){ return `${h.toLocaleString()}hour ${pad(m)}min`; }
 
-function fmtLength(value, unit) {
-  const v = parseFloat(value.toFixed(4)).toLocaleString();
-  return `${v} ${unit}`;
-}
-function fmtUnitValue(value, unit) {
-  const v = parseFloat(value.toFixed(4)).toLocaleString();
-  return `${v} ${unit}`;
-}
-function lengthValueFromBase(baseInch, unit) {
-  if (unit === "inch") return baseInch;
-  if (unit === "ft") return baseInch / 12;
-  if (unit === "cm") return baseInch * 2.54;
-  return baseInch;
-}
-function lengthFactorToInch(unit) {
-  if (unit === "ft") return 12;
-  if (unit === "cm") return 1 / 2.54;
-  return 1;
-}
-function lengthValueFromBaseDim(base, unit, dim=1) {
-  return base / Math.pow(lengthFactorToInch(unit), dim);
-}
-function makeLengthToken(value, unit) {
-  return { type:"length", value, unit, dim:1, base: value * lengthFactorToInch(unit), display:`${value}${unit}` };
-}
-function timeValueFromBase(baseMin, unit) {
-  return unit === "hour" ? baseMin / 60 : baseMin;
-}
-const LENGTH_CONVERSION_UNITS = ["inch", "ft", "cm"];
-function orderedLengthConversionUnits(sourceUnit) {
-  if (!LENGTH_CONVERSION_UNITS.includes(sourceUnit)) return LENGTH_CONVERSION_UNITS;
-  return LENGTH_CONVERSION_UNITS.filter(unit => unit !== sourceUnit).concat(sourceUnit);
-}
-function makeLengthConversion(value, unit) {
-  const baseInch = unit === "ft" ? value * 12 : value;
-  const order = orderedLengthConversionUnits(unit);
-  return { kind:"length", baseInch, unit:order[0], sourceUnit:unit };
-}
-function makeTimeConversion(baseMin, sourceUnit) {
-  return { kind:"time", baseMin, unit:sourceUnit === "min" ? "hour" : "min" };
-}
-function advanceConversion(result) {
-  if (!result) return null;
-  if (result.kind === "length") {
-    const order = orderedLengthConversionUnits(result.sourceUnit);
-    const idx = order.indexOf(result.unit);
-    return {...result, unit: order[(idx + 1) % order.length], sourceUnit:result.sourceUnit || result.unit};
-  }
-  if (result.kind === "time") {
-    return {...result, unit: result.unit === "hour" ? "min" : "hour"};
-  }
-  return result;
-}
-function formatConvertResult(result) {
-  if (!result) return "";
-  if (result.kind === "length") {
-    const order = orderedLengthConversionUnits(result.sourceUnit || result.unit);
-    return order.map(unit => fmtUnitValue(lengthValueFromBase(result.baseInch, unit), unit)).join(" < ");
-  }
-  if (result.kind === "time") return fmtUnitValue(timeValueFromBase(result.baseMin, result.unit), result.unit);
-  return fmtUnitValue(result.value, result.unit);
-}
 function conversionHistoryFor(state) {
   if (state.unitType==="inch" && state.unitValue!==null) {
     const next = makeLengthConversion(state.unitValue, "inch");
