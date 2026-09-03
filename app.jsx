@@ -11,7 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import {
   composeFullLog, emptyFlightLogDraft, formatDraftTimestamp,
-  normalizeFlightLogCase, toFlightLogUppercase,
+  normalizeFlightLogCase, toFlightLogUppercase, validatePassword,
 } from "./src/flight-log.js";
 import {
   getSignedInAccount, initializeAnalytics,
@@ -25,7 +25,6 @@ const DOW_EN = ["SUN","MON","TUE","WED","THU","FRI","SAT"];
 const MON3   = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
 const TZ_STORAGE_KEY = "maintTimerSelectedTz";
 const CALC_HISTORY_STORAGE_KEY = "maintToolCalcHistory";
-const FLT_LOG_MEMO_STORAGE_KEY = "maintToolFltLogMemo";
 const APP_VERSION = "1.0.0";
 const APP_MUTED_RED = "#8A3545";
 const APP_MUTED_BLUE = "#2D4E8A";
@@ -1971,7 +1970,7 @@ function AccountPanel({ account, onAccountChange, onClose }) {
     event.preventDefault();
     const normalizedEmail=email.trim().toLowerCase();
     if(!normalizedEmail||!password){setNotice("Enter your email and password.");return;}
-    if(authMode==="signup"&&!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(password)){
+    if(authMode==="signup"&&!validatePassword(password).valid){
       setNotice("Use 8+ characters with uppercase, lowercase, number, and special character.");
       return;
     }

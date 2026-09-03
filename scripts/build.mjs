@@ -18,6 +18,7 @@ await build({
   minify: true,
   format: "iife",
   target: ["safari15", "chrome89"],
+  external: ["firebase", "firebase/*"],
   define: {
     "process.env.NODE_ENV": JSON.stringify("production"),
   },
