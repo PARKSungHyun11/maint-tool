@@ -51,9 +51,28 @@ test("maintenance interval types retain their existing day counts", () => {
   assert.equal(from("A", "45", "2026-01-01"), "2026-02-15 23:59");
 });
 
-test("NEF preserves the current 29 FEB to 01 MAR policy", () => {
-  const due = calcDuePair("NEF", null, true, "2024-02-29", "UTC", "UTC").utc;
-  assert.equal(wall(due, "UTC"), "2026-03-01 23:59");
+// NEF·MOI is a calendar-day count, not a calendar-year offset: the tab calls
+// calcDuePair("A", calculatorConfig.nefMoiDays, …) with a 240-day default the
+// owner can change. Counting days needs no leap-day policy — every result is a
+// real date, and a 29 FEB in between is simply one of the days counted.
+test("NEF·MOI counts calendar days and absorbs leap days", () => {
+  const from = (date, zone = "UTC", tz = "UTC") =>
+    wall(calcDuePair("A", "240", true, date, zone, tz).utc, zone);
+
+  // 2024 is a leap year, so this span contains 29 FEB; 2026 does not.
+  assert.equal(from("2023-07-01"), "2024-02-26 23:59");
+  assert.equal(from("2025-07-01"), "2026-02-26 23:59");
+
+  // A 29 FEB start date is itself valid and needs no special handling.
+  assert.equal(from("2024-02-29"), "2024-10-26 23:59");
+
+  // Exactly 240 days elapse, leap day included.
+  const start = Date.UTC(2023, 6, 1, 23, 59);
+  const due = calcDuePair("A", "240", true, "2023-07-01", "UTC", "UTC").utc;
+  assert.equal(Math.round((due - start) / 86_400_000), 240);
+
+  // And the count stays on the local calendar across a DST transition.
+  assert.equal(from("2026-02-15", "America/Toronto", "LT"), "2026-10-13 23:59");
 });
 
 test("today mode is deterministic when a clock is supplied", () => {

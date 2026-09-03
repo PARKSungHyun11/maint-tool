@@ -41,8 +41,8 @@ also require `pnpm run sync` and the relevant Xcode/Gradle build.
 3. Never add `days * 24h` to a local deadline. Add the interval on the target
    timezone's calendar and convert that wall time to UTC afterward. KST does not
    expose this DST failure, so tests must cover DST-observing zones.
-4. Maintenance intervals and leap-day policy are domain decisions. Do not change
-   A/B/C/D, MOI, NEF, or the current 29 FEB behavior without owner confirmation.
+4. Maintenance intervals are domain decisions. Do not change the A/B/C/D or MOI
+   day counts, or the NEF·MOI 240-day default, without owner confirmation.
 5. `icon-*.png` files are committed product assets. Do not copy a smaller PNG
    over a larger name or change approved artwork casually. The tests compare PNG
    pixels to manifest declarations. A generic icon must not claim `maskable`.
@@ -57,8 +57,13 @@ also require `pnpm run sync` and the relevant Xcode/Gradle build.
 
 - `customTz` is a mode flag: `"UTC"` means the entered date belongs to UTC;
   other values mean it belongs to the selected `localZone`.
-- The current NEF behavior maps 29 FEB to 01 MAR two years later. This is tested
-  documentation, not an endorsement of the maintenance policy.
+- NEF·MOI is a **calendar-day count**, not a year offset. The tab calls
+  `calcDuePair("A", calculatorConfig.nefMoiDays, …)`, defaulting to 240 days and
+  editable by the owner (0–9999). Counting days needs no leap-day policy: every
+  result is a real date and a 29 FEB inside the span is just one of the days
+  counted. `lib/core.js` once carried an unreachable `type === "NEF"` branch that
+  added two calendar years instead; it was never called by the app and has been
+  removed. Do not reintroduce a year-offset NEF.
 - The web icons are genuinely 192×192 and 512×512. They now claim only `any`;
   add separately designed safe-zone artwork before claiming `maskable`.
 - `ios/App/App/public/`, `android/app/src/main/assets/public/`, `dist/`, and
