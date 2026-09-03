@@ -1,123 +1,76 @@
-# Working on maint-tool
+# Working on Maint Tool
 
-This repository is worked on by more than one AI agent (Codex and Claude) plus
-its owner. This file is the shared contract. It is the single source of truth —
-`CLAUDE.md` points here rather than repeating it.
+This repository is shared by its owner, Codex, and Claude. This file is the
+working contract; `CLAUDE.md` points here instead of duplicating it.
 
-## What this app is
+## Product and architecture
 
-A single-page aircraft maintenance dispatch calculator. It computes **due dates**
-from a 23:59 cutoff (MEL categories A/B/C/D, MOI, NEF) across ~40 timezones, and
-does unit and duration arithmetic on the A/C Time tab.
+Maint Tool is an offline-first React/Capacitor utility for aircraft maintenance
+dispatch work. It combines date calculations, UTC/local time comparison,
+time/length arithmetic, fuel-density conversion, and flight-log/account helpers.
 
-The thing that matters most: **a due date that is wrong by one day is worse than
-an app that does not load.** Correctness of date maths outranks everything else
-in this repo.
-
-## Layout
-
-| Path | What it is |
+| Path | Role |
 | --- | --- |
-| `index.html` | The whole UI. React + JSX, compiled in the browser by Babel standalone. No build step. |
-| `lib/core.js` | All pure date / timezone / unit maths. Runs in the browser and under Node. |
-| `tests/` | Dependency-free test suite. `node tests/run.js`. |
-| `tools/` | `build-icons.js` (SVG → PNG), `check-jsx.js` (parses the JSX in index.html). |
-| `icon*.svg` | Icon **sources**. Edit these. |
-| `icon-*.png` | **Generated.** Never hand-edit, never copy one size over another. |
-| `sw.js`, `manifest.json` | PWA plumbing. |
+| `app.jsx` | React UI and screen state |
+| `lib/core.js` | Pure date, timezone, and unit calculations |
+| `src/` | Flight-log and app-service modules |
+| `scripts/build.mjs` | esbuild bundle and `dist/` packaging |
+| `tests/` | Node regression and static-integrity tests |
+| `ios/`, `android/` | Capacitor native projects |
 
-## The one command
+The date returned to a mechanic is safety-relevant. A one-day error is worse
+than a visible failure, so calculation correctness outranks visual polish.
+
+## Required verification
+
+Install with `pnpm install`, then run before every commit:
 
 ```bash
-npm run verify
+pnpm run verify
 ```
 
-Runs the JSX syntax check and the full test suite. **Green before every commit,
-no exceptions.** There is no build step and no type checker, so this is the only
-thing standing between a typo and a blank white screen on someone's phone.
-
-First time on a machine: `npm install` (only TypeScript is required; Playwright
-is optional and only needed to regenerate icons).
+This builds the production bundle and runs the Node test suite. Native changes
+also require `pnpm run sync` and the relevant Xcode/Gradle build.
 
 ## Rules
 
-1. **Calculation logic goes in `lib/core.js`, not `index.html`.** If it can be
-   wrong, it must be reachable from Node so a test can pin it down. `index.html`
-   binds the core's exports at the top; add to that list when you export
-   something new. `lib/core.js` must not touch `document`, `window`,
-   `localStorage`, or React — a test enforces this.
+1. Put pure calculation logic in `lib/core.js`, not inside React components.
+   It must be importable by Node tests without DOM, React, storage, or native APIs.
+2. Every calculation bug fix needs a regression test that demonstrates the old
+   failure and pins the intended result.
+3. Never add `days * 24h` to a local deadline. Add the interval on the target
+   timezone's calendar and convert that wall time to UTC afterward. KST does not
+   expose this DST failure, so tests must cover DST-observing zones.
+4. Maintenance intervals and leap-day policy are domain decisions. Do not change
+   A/B/C/D, MOI, NEF, or the current 29 FEB behavior without owner confirmation.
+5. `icon-*.png` files are committed product assets. Do not copy a smaller PNG
+   over a larger name or change approved artwork casually. The tests compare PNG
+   pixels to manifest declarations. A generic icon must not claim `maskable`.
+6. Preserve the React/Capacitor build. Do not replace the app with the historical
+   single-file CDN/Babel version or describe the project as having no build step.
+7. Start with `git status --short` and inspect diffs. Never reset, clean, rewrite
+   shared history, expose secrets, or discard another contributor's changes.
+8. Keep design changes scoped. The current visual direction is not yet approved;
+   broad redesigns require owner selection before implementation.
 
-2. **Every bug fix ships with a regression test.** Write the test so it fails
-   against the old behaviour first. The DST cases in `tests/core.test.js` are the
-   model: they name the zone, the date and the expected wall-clock result.
+## Known traps and decisions
 
-3. **PNG icons are generated artefacts.** Edit `icon.svg` or
-   `icon-maskable.svg`, then run `npm run icons`. Do not hand-edit a PNG and do
-   not copy one size to another — `icon-512.png` was once a byte-for-byte copy of
-   the 192px file, and the manifest advertised a resolution that did not exist.
-   A test now compares declared `sizes` against the real IHDR dimensions.
+- `customTz` is a mode flag: `"UTC"` means the entered date belongs to UTC;
+  other values mean it belongs to the selected `localZone`.
+- The current NEF behavior maps 29 FEB to 01 MAR two years later. This is tested
+  documentation, not an endorsement of the maintenance policy.
+- The web icons are genuinely 192×192 and 512×512. They now claim only `any`;
+  add separately designed safe-zone artwork before claiming `maskable`.
+- `ios/App/App/public/`, `android/app/src/main/assets/public/`, `dist/`, and
+  `app.js` are generated by the current build/sync workflow. Review source files
+  first and regenerate rather than hand-editing copied bundles.
+- Past handoff notes and QA captures are leads, not proof of current behavior.
+  Rebuild and recapture the current checkout before making a release claim.
 
-4. **No empty "trigger deployment" commits.** GitHub Pages redeploys on any push
-   to `main`; if a change is not showing up the cause is browser or service
-   worker caching, not a missing commit. The history already carries half a dozen
-   of these and they make the log unreadable.
+## Agent handoff
 
-5. **Do not add a build step or move hosting without saying so in the PR.** The
-   no-build-step design is deliberate: the owner edits and deploys from a phone.
-   If you do add one, `npm run verify` has to keep working unchanged.
-
-6. **Ask before changing a maintenance interval.** A/B/C/D, MOI and NEF day
-   counts encode a real-world rule. They are not tuning knobs.
-
-## Things that have already bitten this repo
-
-Read these before touching the relevant area.
-
-- **DST and due dates.** Adding `days * 24h` to an instant drifts by an hour
-  across a spring-forward transition, turning a 23:59 cutoff into 00:59 and
-  reporting the due date a full day late. `calcDuePair` therefore adds the
-  interval on the *calendar of the target zone*, via `zonedDateToUtc`. Never go
-  back to `setUTCDate` on a local-zone instant. Korea has no DST, so this class
-  of bug is invisible when testing from KST — that is why the suite pins
-  Toronto, Paris, London, Sydney and Santiago.
-
-- **`customTz` is a mode flag, not a zone id.** `"UTC"` means the custom date was
-  entered as a UTC date; anything else means it was entered in `localZone`. In
-  custom mode only one of the two result rows is rendered, so `calcDuePair`
-  returns the same instant in both fields on purpose.
-
-- **NEF and 29 February.** A 29 FEB base rolls to 01 MAR two years later. This is
-  the original behaviour, kept deliberately and pinned by a test. Changing it is
-  a maintenance-rule decision, not a code cleanup.
-
-- **iOS ignores an SVG `apple-touch-icon`.** It must be a PNG or Safari falls
-  back to a screenshot of the page. This is why `icon-180.png` exists.
-
-- **Maskable icons get cropped to a circle.** Only art drawn inside the centre
-  80% safe zone may claim `purpose: "maskable"` — hence the separate
-  `icon-maskable.svg`. The original icon had "TIMER" at 82% down the canvas and
-  lost its bottom edge on Android.
-
-- **The CDN is a single point of failure.** React, ReactDOM and Babel come from
-  unpkg. If any of them fails the page renders nothing at all, so `index.html`
-  carries a `#cdn-fallback` card that appears instead of a blank screen. Keep it
-  working if you touch the script tags.
-
-- **`caches.addAll` in `sw.js` rejects as a unit.** One missing file in `STATIC`
-  and the service worker never installs. A test checks every entry exists.
-
-- **`netlify.toml` headers do nothing on GitHub Pages.** The repo is deployed
-  from `main` at the repository root. The Netlify config is kept for the
-  alternate host; don't rely on its cache headers.
-
-## Handing work between agents
-
-- Branch from `main`. One branch per piece of work, pushed to `origin`.
-- Open a draft PR and describe what you verified, not just what you changed.
-- Leave `npm run verify` green on the branch tip. If you must stop mid-way, say
-  so explicitly in the PR body and leave the failing test in place rather than
-  deleting it.
-- Do not rewrite history on a branch another agent or the owner may have checked
-  out. Merge `main` in; don't rebase someone else's branch.
-- If you disagree with something in this file, change the file in the same PR
-  and say why. Silent divergence is the failure mode to avoid.
+- Branch from the current `main`. If another agent owns a branch, merge `main`
+  into it; do not rebase or force-push it.
+- Keep one scoped PR and record what was actually verified.
+- If a domain decision remains open, preserve current behavior, pin it in tests,
+  and label it clearly instead of guessing.

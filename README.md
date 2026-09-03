@@ -1,41 +1,31 @@
 # Maint Tool
 
-Aircraft maintenance dispatch helper for date and time calculations.
-
-Computes due dates from a 23:59 cutoff (MEL A/B/C/D, MOI, NEF) across ~40
-timezones, plus unit and duration arithmetic on the A/C Time tab. Installable as
-a PWA and usable offline once loaded.
+Offline-first aircraft maintenance dispatch utility for iOS, Android, and the
+web. The app provides maintenance due-date calculations, UTC/local time views,
+time and length arithmetic, fuel-density conversion, and supporting workflow
+tools in a React/Capacitor shell.
 
 ## Development
 
 ```bash
-npm install      # once per machine
-npm run verify   # JSX syntax check + tests — run this before every commit
+pnpm install
+pnpm run dev
+pnpm run verify
 ```
 
-| Command | What it does |
-| --- | --- |
-| `npm run verify` | The gate. JSX syntax check plus the full test suite. |
-| `npm test` | Tests only. Honours `TZ=` so you can reproduce timezone bugs. |
-| `npm run icons` | Regenerates the PNG icons from the SVG sources (needs Playwright). |
+`pnpm run verify` builds the production web bundle and runs the Node regression
+suite. Pure date/timezone/unit logic lives in `lib/core.js`; contributors and AI
+agents should read [`AGENTS.md`](./AGENTS.md) before changing it.
 
-There is no build step: `index.html` is served as-is and Babel compiles the JSX
-in the browser. Pure calculation logic lives in `lib/core.js` so it can be unit
-tested under Node.
+Native refresh commands:
 
-Agents and contributors: read [`AGENTS.md`](./AGENTS.md) before making changes.
+```bash
+pnpm run sync
+pnpm run open:ios
+pnpm run open:android
+```
 
-## Hosting
+## Web hosting
 
-A static site served from the repository root.
-
-- Build command: none
-- Publish directory: repository root
-- Pages source: `main` branch, `/ (root)`
-
-The manifest and service worker use relative paths, so it works from a GitHub
-Pages project URL such as `/maint-tool/`. `netlify.toml` is kept for the
-alternate host — its cache headers have no effect on GitHub Pages.
-
-If a deploy does not appear, the cause is browser or service worker caching, not
-a missing commit. Hard-reload, or unregister the service worker in DevTools.
+`pnpm run build` creates `dist/`. Relative manifest and service-worker paths
+allow deployment below a project subpath such as `/maint-tool/`.

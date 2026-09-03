@@ -8,26 +8,26 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        timezone: [UTC, Asia/Seoul, America/Toronto]
+    env:
+      TZ: ${{ matrix.timezone }}
     steps:
       - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.22.0
 
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: pnpm
 
-      # Playwright is optional and only needed to regenerate icons, so keep it
-      # out of CI. The tests read the committed PNGs directly.
-      - name: Install dev dependencies
-        run: npm install --no-package-lock --omit=optional
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-      # Same command the agents run locally — if this diverges, the contract in
-      # AGENTS.md stops meaning anything.
-      - name: Verify
-        run: npm run verify
-
-      # The timezone tests must not pass merely because the runner sits in UTC.
-      - name: Verify from a DST timezone
-        run: TZ=America/Toronto npm test
-
-      - name: Verify from KST
-        run: TZ=Asia/Seoul npm test
+      - name: Verify production build and tests
+        run: pnpm run verify

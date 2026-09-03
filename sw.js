@@ -1,21 +1,15 @@
-// Bump when the precache list changes so stale entries are dropped on activate.
 const CACHE = 'maint-v1';
 const BASE = self.registration.scope.endsWith('/')
   ? self.registration.scope.slice(0, -1)
   : self.registration.scope;
 const assetUrl = path => new URL(path, `${BASE}/`).pathname;
-// caches.addAll rejects as a unit, so every entry here must exist or the
-// service worker never installs. tests/static.test.js enforces that.
 const STATIC = [
   assetUrl('./'),
   assetUrl('./index.html'),
+  assetUrl('./app.js'),
   assetUrl('./manifest.json'),
-  assetUrl('./lib/core.js'),
-  assetUrl('./icon-180.png'),
   assetUrl('./icon-192.png'),
-  assetUrl('./icon-512.png'),
-  assetUrl('./icon-maskable-512.png'),
-  assetUrl('./icon.svg')
+  assetUrl('./icon-512.png')
 ];
 
 self.addEventListener('install', e => {
@@ -36,12 +30,10 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
 
   const url = new URL(e.request.url);
-  // App code is network-first so a deploy becomes visible right away. That
-  // means index.html and lib/core.js, which carries the calculation logic —
-  // serving a stale copy of it would show wrong due dates.
-  if (url.pathname === assetUrl('./') ||
-      url.pathname.endsWith('.html') ||
-      url.pathname === assetUrl('./lib/core.js')) {
+  // The app shell is network-first so GitHub Pages updates become visible quickly.
+  const isLocalRuntimeFile = url.origin === self.location.origin
+    && (url.pathname === assetUrl('./app.js') || url.pathname === assetUrl('./config.js'));
+  if (url.pathname === assetUrl('./') || url.pathname.endsWith('.html') || isLocalRuntimeFile) {
     e.respondWith(
       fetch(e.request)
         .then(r => {
@@ -49,16 +41,12 @@ self.addEventListener('fetch', e => {
           caches.open(CACHE).then(c => c.put(e.request, copy));
           return r;
         })
-        // Offline: serve the cached copy. Only a navigation may fall back to
-        // the shell — handing index.html to a script request would break it.
-        .catch(() => caches.match(e.request).then(r =>
-          r || (e.request.mode === 'navigate' ? caches.match(assetUrl('./index.html')) : undefined)
-        ))
+        .catch(() => caches.match(e.request).then(r => r || caches.match(assetUrl('./index.html'))))
     );
     return;
   }
 
-  // Static files and CDN scripts are cache-first after the first successful load.
+  // Static files are cache-first after the first successful load.
   e.respondWith(
     caches.match(e.request).then(r => r || fetch(e.request).then(res => {
       const copy = res.clone();
