@@ -76,3 +76,37 @@ test("every service-worker precache entry exists", () => {
     .filter(Boolean);
   for (const entry of entries) assert.ok(existsSync(join(root, entry)), entry);
 });
+
+// The publish directory drifted once: netlify.toml still said "." long after
+// the build started emitting dist/, so the deploy served the repository root —
+// where config.js is gitignored and 404s, and ios/, android/, src/, tests/ and
+// supabase/ are all reachable. These three have to name the same directory.
+test("the build output, Netlify publish dir and Capacitor webDir agree", () => {
+  const buildScript = read("scripts/build.mjs");
+  const outDir = buildScript.match(/await mkdir\("([^"]+)"/)?.[1];
+  assert.ok(outDir, "could not find the build output directory in scripts/build.mjs");
+
+  const publishDir = read("netlify.toml").match(/^\s*publish\s*=\s*"([^"]+)"/m)?.[1];
+  assert.equal(publishDir, outDir, "netlify.toml publish must be the build output directory");
+
+  const { webDir } = JSON.parse(read("capacitor.config.json"));
+  assert.equal(webDir, outDir, "capacitor.config.json webDir must be the build output directory");
+});
+
+// A deploy serves only the publish directory, so anything index.html asks for
+// has to be copied into it. config.js is the one that bites: it is gitignored,
+// and the build substitutes config.example.js for it.
+test("the publish directory carries every local asset index.html references", () => {
+  const buildScript = read("scripts/build.mjs");
+  const outDir = buildScript.match(/await mkdir\("([^"]+)"/)?.[1];
+  if (!existsSync(join(root, outDir))) return; // built by `pnpm run verify` before tests
+
+  const referenced = [...html.matchAll(/(?:src|href)="(?!https?:|data:|#|\/\/)([^"?#]+)/g)]
+    .map((match) => match[1])
+    .filter((path) => !path.startsWith("/"));
+
+  assert.ok(referenced.length > 0, "no local assets found in index.html");
+  for (const asset of new Set(referenced)) {
+    assert.ok(existsSync(join(root, outDir, asset)), `${outDir}/${asset} is missing from the build`);
+  }
+});

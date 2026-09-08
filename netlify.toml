@@ -1,5 +1,10 @@
+# The web build outputs to dist/ (scripts/build.mjs, and capacitor.config.json
+# webDir). Publishing "." served the repository root instead: config.js is
+# gitignored so it 404'd there, and ios/, android/, src/, tests/, supabase/ and
+# the lockfile were all reachable. dist/ contains only the seven web assets.
 [build]
-  publish = "."
+  command = "pnpm run build"
+  publish = "dist"
 
 [[headers]]
   for = "/*"
