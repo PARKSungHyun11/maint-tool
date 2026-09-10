@@ -1,4 +1,4 @@
-const CACHE = 'maint-v0';
+const CACHE = 'maint-v1';
 const BASE = self.registration.scope.endsWith('/')
   ? self.registration.scope.slice(0, -1)
   : self.registration.scope;
@@ -6,10 +6,10 @@ const assetUrl = path => new URL(path, `${BASE}/`).pathname;
 const STATIC = [
   assetUrl('./'),
   assetUrl('./index.html'),
+  assetUrl('./app.js'),
   assetUrl('./manifest.json'),
   assetUrl('./icon-192.png'),
-  assetUrl('./icon-512.png'),
-  assetUrl('./icon.svg')
+  assetUrl('./icon-512.png')
 ];
 
 self.addEventListener('install', e => {
@@ -30,8 +30,10 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
 
   const url = new URL(e.request.url);
-  // index.html is network-first so Netlify updates become visible quickly.
-  if (url.pathname === assetUrl('./') || url.pathname.endsWith('.html')) {
+  // The app shell is network-first so GitHub Pages updates become visible quickly.
+  const isLocalRuntimeFile = url.origin === self.location.origin
+    && (url.pathname === assetUrl('./app.js') || url.pathname === assetUrl('./config.js'));
+  if (url.pathname === assetUrl('./') || url.pathname.endsWith('.html') || isLocalRuntimeFile) {
     e.respondWith(
       fetch(e.request)
         .then(r => {
@@ -44,7 +46,7 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Static files and CDN scripts are cache-first after the first successful load.
+  // Static files are cache-first after the first successful load.
   e.respondWith(
     caches.match(e.request).then(r => r || fetch(e.request).then(res => {
       const copy = res.clone();

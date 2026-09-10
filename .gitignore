@@ -1,5 +1,14 @@
-.DS_Store
-.netlify/
 node_modules/
 dist/
 build/
+icons/
+.netlify/
+.DS_Store
+ios/App/Pods/
+ios/App/App/public/
+android/.gradle/
+android/.idea/
+android/local.properties
+android/app/build/
+config.js
+ios/App/App/GoogleService-Info.plist

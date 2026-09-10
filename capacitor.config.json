@@ -1,0 +1,11 @@
+{
+  "appId": "com.parksunghyun.mainttool",
+  "appName": "Maint Tool",
+  "webDir": "dist",
+  "backgroundColor": "#F2F4F7",
+  "plugins": {
+    "Keyboard": {
+      "resize": "none"
+    }
+  }
+}
