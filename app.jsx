@@ -19,8 +19,35 @@ import {
   serviceConfig, signInWithEmail, signInWithOAuth, signOutCurrentAccount, signUpWithEmail,
   syncDraftsToCloud,
 } from "./src/app-services.js";
+import {
+  advanceConversion,
+  calcDuePair,
+  fmtHMShort,
+  fmtHMStr,
+  fmtLength,
+  fmtLengthStr,
+  fmtNum,
+  fmtResultStr,
+  fmtRoundedValue,
+  fmtUnitValue,
+  formatConvertResult,
+  getOffsetMs,
+  getPartsInZone,
+  LENGTH_CONVERSION_UNITS,
+  lengthFactorToInch,
+  lengthValueFromBase,
+  lengthValueFromBaseDim,
+  makeLengthConversion,
+  makeLengthToken,
+  makeTimeConversion,
+  orderedLengthConversionUnits,
+  pad,
+  timeValueFromBase,
+  tMins,
+  toHM,
+  toSup,
+} from "./lib/core.js";
 
-const pad = (n) => String(n).padStart(2, "0");
 const DOW_EN = ["SUN","MON","TUE","WED","THU","FRI","SAT"];
 const MON3   = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
 const TZ_STORAGE_KEY = "maintTimerSelectedTz";
@@ -273,10 +300,22 @@ function setDaysKeyboardShift(keyboardHeight) {
   const shell = document.querySelector(".app-shell");
   if (!shell || !activeDaysInput || document.activeElement !== activeDaysInput) return;
 
+  // The shift is driven by a keyboardHeight the OS reports. A major iOS release
+  // is exactly when that number changes shape — different units, or a bogus
+  // value mid-transition. Unshifted is a usable app; shifted off-screen is a
+  // blank one the user cannot recover from, so reject anything implausible and
+  // cap the result. Values in the range the device tests covered are untouched.
+  const viewportHeight = window.innerHeight;
+  if (!Number.isFinite(keyboardHeight) || keyboardHeight <= 0 || keyboardHeight >= viewportHeight) {
+    clearDaysKeyboardShift();
+    return;
+  }
+
   const currentShift = Number(shell.dataset.keyboardShift || 0);
   const inputBottom = activeDaysInput.getBoundingClientRect().bottom + currentShift;
-  const keyboardTop = window.innerHeight - keyboardHeight;
-  const nextShift = Math.max(0, Math.round(inputBottom - keyboardTop + 16));
+  const keyboardTop = viewportHeight - keyboardHeight;
+  const wanted = Math.round(inputBottom - keyboardTop + 16);
+  const nextShift = Math.min(keyboardTop, Math.max(0, wanted));
 
   shell.dataset.keyboardShift = String(nextShift);
   shell.style.transform = `translate3d(0, -${nextShift}px, 0)`;
@@ -304,33 +343,9 @@ function handleDaysInputBlur(event) {
     }
   }, 120);
 }
-const PARTS_FORMATTERS = new Map();
 const WEEKDAY_FORMATTERS = new Map();
 const TIME_FORMATTERS = new Map();
 const UTC_OFFSET_CACHE = new Map();
-
-function getPartsFormatter(timeZone) {
-  if (!PARTS_FORMATTERS.has(timeZone)) {
-    PARTS_FORMATTERS.set(timeZone, new Intl.DateTimeFormat("en-US", {
-      timeZone, hourCycle:"h23", year:"numeric", month:"2-digit", day:"2-digit",
-      hour:"2-digit", minute:"2-digit", second:"2-digit"
-    }));
-  }
-  return PARTS_FORMATTERS.get(timeZone);
-}
-function getPartsInZone(date, timeZone) {
-  const parts = getPartsFormatter(timeZone).formatToParts(date);
-  return Object.fromEntries(parts.filter(p=>p.type!=="literal").map(p=>[p.type, Number(p.value)]));
-}
-function getOffsetMs(date, timeZone) {
-  const p = getPartsInZone(date, timeZone);
-  return Date.UTC(p.year, p.month-1, p.day, p.hour, p.minute, p.second) - date.getTime();
-}
-function zonedDateToUtc(y, mo, d, h, m, timeZone) {
-  let utc = Date.UTC(y, mo, d, h, m, 0, 0);
-  for (let i=0; i<3; i++) utc = Date.UTC(y, mo, d, h, m, 0, 0) - getOffsetMs(new Date(utc), timeZone);
-  return utc;
-}
 const fmtDateCompact = (day, month, year) => `${pad(day)} ${MON3[month]} ${String(year).slice(2)}`;
 function fmt29MARZone(date, timeZone="UTC") {
   if (!date||isNaN(date)) return "—";
@@ -374,41 +389,6 @@ function TimeText({ value, active, color }) {
   );
 }
 
-// Returns {utc, local} due dates. Custom dates use the chosen timezone's 23:59 cutoff.
-function calcDuePair(type, customDays, useCustom, customDateStr, localZone="Asia/Seoul", customTz="UTC") {
-  const daysMap = {A: parseInt(customDays)||0, B:3, C:10, D:120, MOI:240};
-
-  let utcBaseMs, localBaseMs;
-  if (useCustom && customDateStr) {
-    const parts = customDateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (!parts) return {utc:null, local:null};
-    const y=parseInt(parts[1]), mo=parseInt(parts[2])-1, d=parseInt(parts[3]);
-    const baseMs = customTz === "UTC"
-      ? Date.UTC(y, mo, d, 23, 59, 0, 0)
-      : zonedDateToUtc(y, mo, d, 23, 59, localZone);
-    utcBaseMs = baseMs;
-    localBaseMs = baseMs;
-  } else {
-    const now = new Date();
-    const utcY=now.getUTCFullYear(), utcMo=now.getUTCMonth(), utcD=now.getUTCDate();
-    const local = getPartsInZone(now, localZone);
-    utcBaseMs = Date.UTC(utcY, utcMo, utcD, 23, 59, 0, 0);
-    localBaseMs = zonedDateToUtc(local.year, local.month-1, local.day, 23, 59, localZone);
-  }
-
-  function applyType(baseMs) {
-    const d = new Date(baseMs);
-    if (type === "NEF") {
-      d.setUTCFullYear(d.getUTCFullYear() + 2);
-    } else {
-      const days = daysMap[type] ?? 0;
-      d.setUTCDate(d.getUTCDate() + days);
-    }
-    return d;
-  }
-
-  return { utc: applyType(utcBaseMs), local: applyType(localBaseMs) };
-}
 function fmt29MAR(date) {
   if (!date||isNaN(date)) return "—";
   return `${fmtDateCompact(date.getUTCDate(), date.getUTCMonth(), date.getUTCFullYear())} (${DOW_EN[date.getUTCDay()]})`;
@@ -948,31 +928,12 @@ function MoiNefTab({tzActive, selectedTz, tzOffset, onNameChange}) {
 }
 
 // ─── A/C Time Calculator ──────────────────────────────────────────────────────
-function tMins({h,m}){ return h*60+m; }
-function toHM(tm){ const neg=tm<0,abs=Math.abs(Math.round(tm)); return {h:Math.floor(abs/60),m:abs%60,neg}; }
 
 const CALC_BLUE = APP_MUTED_BLUE;
 const CALC_BLUE_MUTED = "#8799BC";
 const CALC_FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', sans-serif";
 const CALC_FONT_WEIGHT = 700;
 const CALC_HISTORY_FONT_WEIGHT = 400;
-function fmtNum(value) {
-  return parseFloat(Number(value).toFixed(10)).toLocaleString(undefined,{maximumFractionDigits:10});
-}
-function toSup(n) {
-  const map = {"0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹","-":"⁻"};
-  return String(n).split("").map(ch=>map[ch] ?? ch).join("");
-}
-function fmtHMStr({h,m,neg}){ return `${neg?"-":""}${h.toLocaleString()}hour ${pad(m)}min`; }
-function fmtLengthStr({value,unit,dim=1,neg}) {
-  return `${neg?"-":""}${fmtNum(Math.abs(value))}${unit}${dim>1?toSup(dim):""}`;
-}
-function fmtResultStr(result) {
-  if (!result) return "";
-  if (result.type==="scalar") return result.v.toLocaleString(undefined,{maximumFractionDigits:10});
-  if (result.type==="length") return fmtLengthStr(result);
-  return fmtHMStr(result);
-}
 function fmtHM({h,m,neg}) {
   return (
     <span>
@@ -984,71 +945,7 @@ function fmtHM({h,m,neg}) {
     </span>
   );
 }
-function fmtHMShort({h,m}){ return `${h.toLocaleString()}hour ${pad(m)}min`; }
 
-function fmtRoundedValue(value) {
-  return parseFloat(value.toFixed(4)).toLocaleString();
-}
-function fmtLength(value, unit) {
-  return `${fmtRoundedValue(value)} ${unit}`;
-}
-function fmtUnitValue(value, unit) {
-  return `${fmtRoundedValue(value)} ${unit}`;
-}
-function lengthValueFromBase(baseInch, unit) {
-  if (unit === "inch") return baseInch;
-  if (unit === "ft") return baseInch / 12;
-  if (unit === "cm") return baseInch * 2.54;
-  return baseInch;
-}
-function lengthFactorToInch(unit) {
-  if (unit === "ft") return 12;
-  if (unit === "cm") return 1 / 2.54;
-  return 1;
-}
-function lengthValueFromBaseDim(base, unit, dim=1) {
-  return base / Math.pow(lengthFactorToInch(unit), dim);
-}
-function makeLengthToken(value, unit) {
-  return { type:"length", value, unit, dim:1, base: value * lengthFactorToInch(unit), display:`${value}${unit}` };
-}
-function timeValueFromBase(baseMin, unit) {
-  return unit === "hour" ? baseMin / 60 : baseMin;
-}
-const LENGTH_CONVERSION_UNITS = ["inch", "ft", "cm"];
-function orderedLengthConversionUnits(sourceUnit) {
-  if (!LENGTH_CONVERSION_UNITS.includes(sourceUnit)) return LENGTH_CONVERSION_UNITS;
-  return LENGTH_CONVERSION_UNITS.filter(unit => unit !== sourceUnit).concat(sourceUnit);
-}
-function makeLengthConversion(value, unit) {
-  const baseInch = unit === "ft" ? value * 12 : value;
-  const order = orderedLengthConversionUnits(unit);
-  return { kind:"length", baseInch, unit:order[0], sourceUnit:unit };
-}
-function makeTimeConversion(baseMin, sourceUnit) {
-  return { kind:"time", baseMin, unit:sourceUnit === "min" ? "hour" : "min" };
-}
-function advanceConversion(result) {
-  if (!result) return null;
-  if (result.kind === "length") {
-    const order = orderedLengthConversionUnits(result.sourceUnit);
-    const idx = order.indexOf(result.unit);
-    return {...result, unit: order[(idx + 1) % order.length], sourceUnit:result.sourceUnit || result.unit};
-  }
-  if (result.kind === "time") {
-    return {...result, unit: result.unit === "hour" ? "min" : "hour"};
-  }
-  return result;
-}
-function formatConvertResult(result) {
-  if (!result) return "";
-  if (result.kind === "length") {
-    const order = orderedLengthConversionUnits(result.sourceUnit || result.unit);
-    return order.map(unit => fmtUnitValue(lengthValueFromBase(result.baseInch, unit), unit)).join(" < ");
-  }
-  if (result.kind === "time") return fmtUnitValue(timeValueFromBase(result.baseMin, result.unit), result.unit);
-  return fmtUnitValue(result.value, result.unit);
-}
 function standaloneConversionSheetFor(state) {
   if (state.tokens.length) return null;
 

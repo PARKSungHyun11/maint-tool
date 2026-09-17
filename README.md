@@ -1,15 +1,31 @@
 # Maint Tool
 
-Aircraft maintenance dispatch helper for date and time calculations.
+Offline-first aircraft maintenance dispatch utility for iOS, Android, and the
+web. The app provides maintenance due-date calculations, UTC/local time views,
+time and length arithmetic, fuel-density conversion, and supporting workflow
+tools in a React/Capacitor shell.
 
-## GitHub Pages
+## Development
 
-This is a static web app. It can be hosted from the repository root with GitHub Pages.
+```bash
+pnpm install
+pnpm run dev
+pnpm run verify
+```
 
-- Build command: none
-- Publish directory: repository root
-- Pages source: `main` branch, `/ (root)`
+`pnpm run verify` builds the production web bundle and runs the Node regression
+suite. Pure date/timezone/unit logic lives in `lib/core.js`; contributors and AI
+agents should read [`AGENTS.md`](./AGENTS.md) before changing it.
 
-The app uses relative paths for the manifest and service worker so it works from a GitHub Pages project URL such as `/maint-tool/`.
+Native refresh commands:
 
-Deployment trigger: 2026-07-05 16:12 KST
+```bash
+pnpm run sync
+pnpm run open:ios
+pnpm run open:android
+```
+
+## Web hosting
+
+`pnpm run build` creates `dist/`. Relative manifest and service-worker paths
+allow deployment below a project subpath such as `/maint-tool/`.

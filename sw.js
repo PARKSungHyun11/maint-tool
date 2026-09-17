@@ -3,10 +3,16 @@ const BASE = self.registration.scope.endsWith('/')
   ? self.registration.scope.slice(0, -1)
   : self.registration.scope;
 const assetUrl = path => new URL(path, `${BASE}/`).pathname;
+// Precached during install, so the very first visit is enough to make the app
+// work offline afterwards. config.js belongs here too: the page requests it
+// before this worker controls the page, so without precaching it only reaches
+// the cache on the second visit — and a home-screen launch that goes offline
+// in between would come up with no Supabase configuration.
 const STATIC = [
   assetUrl('./'),
   assetUrl('./index.html'),
   assetUrl('./app.js'),
+  assetUrl('./config.js'),
   assetUrl('./manifest.json'),
   assetUrl('./icon-192.png'),
   assetUrl('./icon-512.png')
