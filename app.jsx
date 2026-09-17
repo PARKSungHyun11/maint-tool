@@ -300,10 +300,22 @@ function setDaysKeyboardShift(keyboardHeight) {
   const shell = document.querySelector(".app-shell");
   if (!shell || !activeDaysInput || document.activeElement !== activeDaysInput) return;
 
+  // The shift is driven by a keyboardHeight the OS reports. A major iOS release
+  // is exactly when that number changes shape — different units, or a bogus
+  // value mid-transition. Unshifted is a usable app; shifted off-screen is a
+  // blank one the user cannot recover from, so reject anything implausible and
+  // cap the result. Values in the range the device tests covered are untouched.
+  const viewportHeight = window.innerHeight;
+  if (!Number.isFinite(keyboardHeight) || keyboardHeight <= 0 || keyboardHeight >= viewportHeight) {
+    clearDaysKeyboardShift();
+    return;
+  }
+
   const currentShift = Number(shell.dataset.keyboardShift || 0);
   const inputBottom = activeDaysInput.getBoundingClientRect().bottom + currentShift;
-  const keyboardTop = window.innerHeight - keyboardHeight;
-  const nextShift = Math.max(0, Math.round(inputBottom - keyboardTop + 16));
+  const keyboardTop = viewportHeight - keyboardHeight;
+  const wanted = Math.round(inputBottom - keyboardTop + 16);
+  const nextShift = Math.min(keyboardTop, Math.max(0, wanted));
 
   shell.dataset.keyboardShift = String(nextShift);
   shell.style.transform = `translate3d(0, -${nextShift}px, 0)`;
