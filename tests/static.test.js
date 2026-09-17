@@ -69,12 +69,24 @@ test("the calculation core stays browser- and framework-independent", () => {
   }
 });
 
+// caches.addAll rejects as a unit, so one missing entry means the worker never
+// installs and the app has no offline mode at all. Resolved against the build
+// output because that is what a deploy serves — config.js is gitignored and
+// only exists there.
 test("every service-worker precache entry exists", () => {
+  const outDir = read("scripts/build.mjs").match(/await mkdir\("([^"]+)"/)?.[1];
+  assert.ok(outDir, "could not find the build output directory in scripts/build.mjs");
+  if (!existsSync(join(root, outDir))) return; // built by `pnpm run verify` before tests
+
   const staticBlock = serviceWorker.match(/const STATIC = \[([\s\S]*?)\];/)?.[1] ?? "";
   const entries = [...staticBlock.matchAll(/assetUrl\('\.\/([^']*)'\)/g)]
     .map((match) => match[1])
     .filter(Boolean);
-  for (const entry of entries) assert.ok(existsSync(join(root, entry)), entry);
+
+  assert.ok(entries.length > 0, "no precache entries found in sw.js");
+  for (const entry of entries) {
+    assert.ok(existsSync(join(root, outDir, entry)), `${outDir}/${entry} is precached but missing`);
+  }
 });
 
 // The publish directory drifted once: netlify.toml still said "." long after
